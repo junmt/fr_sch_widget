@@ -1,7 +1,7 @@
 //! アプリの状態・ポーリングのループ・画面から呼ぶコマンド
 
 use crate::config::{self, credentials, KeyAction, Settings};
-use crate::crm::{record_url, CrmClient, CrmError, Session};
+use crate::crm::{record_url, AuthState, CrmClient, CrmError, Session};
 use crate::engine::{is_resumed, should_fetch, Engine, Notice, SyncState, SyncStatus};
 use crate::schedule::{build_today, query_range, CrmTimeZone, ScheduleItem};
 use crate::{notify, text, tray};
@@ -38,6 +38,8 @@ pub struct AppState {
     wake: Notify,
     /// 同時に複数の取得をしないよう、取得中はこのロックを持つ
     conn: tokio::sync::Mutex<Option<Connection>>,
+    /// ログインの状態（トークンの使い回し・認証の制限）。接続テストとも共有する
+    auth: tokio::sync::Mutex<AuthState>,
 }
 
 #[derive(Serialize, Clone)]
@@ -64,6 +66,7 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 impl AppState {
     pub fn new(data_dir: PathBuf, settings: Settings, engine: Engine) -> Self {
+        let data_dir_for_auth = data_dir.clone();
         Self {
             engine: Mutex::new(engine),
             settings: Mutex::new(settings),
@@ -71,6 +74,7 @@ impl AppState {
             data_dir,
             wake: Notify::new(),
             conn: tokio::sync::Mutex::new(None),
+            auth: tokio::sync::Mutex::new(config::load_auth(&data_dir_for_auth)),
         }
     }
 
@@ -134,8 +138,7 @@ pub async fn poll_loop(app: AppHandle) {
         if should_fetch(force, paused, next_fetch, now) {
             fetch_once(&app).await;
             let interval = lock(&st.settings).interval_minutes;
-            let delay = lock(&st.engine).next_delay(interval);
-            next_fetch = Some(Local::now() + chrono::Duration::from_std(delay).unwrap_or_default());
+            next_fetch = Some(lock(&st.engine).next_fetch_at(Local::now(), interval));
             force = false;
         }
 
@@ -213,9 +216,22 @@ async fn fetch_records(st: &AppState, settings: &Settings, access_key: &str) -> 
     }
     let conn = guard.as_mut().expect("接続は直前に作った");
     let (from, to) = query_range(Local::now().date_naive());
-    conn.client
-        .fetch_with_relogin(&mut conn.session, &settings.username, access_key, from, to)
-        .await
+    let mut auth = st.auth.lock().await;
+    let before = auth.clone();
+    let result = conn
+        .client
+        .fetch_with_relogin(&mut conn.session, &mut auth, &settings.username, access_key, from, to)
+        .await;
+    save_auth_if_changed(&st.data_dir, &before, &auth);
+    result
+}
+
+fn save_auth_if_changed(dir: &std::path::Path, before: &AuthState, after: &AuthState) {
+    if before != after {
+        if let Err(e) = config::save_auth(dir, after) {
+            log::warn!("ログインの状態を保存できませんでした: {e}");
+        }
+    }
 }
 
 /// 終了する前にログアウトする（最大2秒待つ）
@@ -254,7 +270,7 @@ pub fn open_settings_window(app: &AppHandle) {
         return;
     }
     let built = WebviewWindowBuilder::new(app, SETTINGS, WebviewUrl::App("settings.html".into()))
-        .title("設定 - 今日の予定ウィジェット")
+        .title("設定 - F-RevoCRM Schedule Widget")
         .inner_size(480.0, 700.0)
         .min_inner_size(400.0, 400.0)
         .always_on_top(true)
@@ -388,6 +404,7 @@ pub async fn save_settings(app: AppHandle, settings: Settings, access_key: Optio
 
 #[tauri::command]
 pub async fn test_connection(
+    state: tauri::State<'_, AppState>,
     crm_url: String,
     username: String,
     access_key: Option<String>,
@@ -406,7 +423,13 @@ pub async fn test_connection(
         .ok_or("アクセスキーを入力してください")?;
 
     let client = CrmClient::new(&url).map_err(|e| e.to_string())?;
-    let session = client.login(&username, &key).await.map_err(|e| e.to_string())?;
+    let session = {
+        let mut auth = state.auth.lock().await;
+        let before = auth.clone();
+        let r = client.login(&username, &key, &mut auth, chrono::Utc::now()).await;
+        save_auth_if_changed(&state.data_dir, &before, &auth);
+        r.map_err(|e| e.to_string())?
+    };
     let today = Local::now().date_naive();
     let (from, to) = query_range(today);
     let result = client.fetch_events(&session, from, to).await;

@@ -1,4 +1,4 @@
-# F-RevoCRM 今日の予定ウィジェット
+# F-RevoCRM Schedule Widget
 
 F-RevoCRM から自分の今日の予定（活動）を取得して、デスクトップに常駐表示する Windows 用ウィジェットです。数分おきに取り直し、新しく入った予定や開始が近い予定を通知します。
 
@@ -69,6 +69,7 @@ npm run tauri build -- --config src-tauri/tauri.ci.conf.json   # インストー
 |---|---|
 | 設定 | `%APPDATA%\fr-sch-widget\config.json` |
 | 前回取得した予定（その日の分だけ使う） | `%APPDATA%\fr-sch-widget\cache.json` |
+| ログインに使ったトークン（F-RevoCRM の認証の制限を避けるため。秘密情報ではない） | `%APPDATA%\fr-sch-widget\auth.json` |
 | アクセスキー | Windows 資格情報マネージャー（`fr-sch-widget`） |
 | ログ | `%LOCALAPPDATA%\fr-sch-widget\logs\` |
 

@@ -160,6 +160,15 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> std::io::Result<()> {
     std::fs::rename(&tmp, path)
 }
 
+/// ログインに使ったトークンなど（`crm::AuthState`）。トークンだけではログインできないので秘密情報ではない
+pub fn load_auth(dir: &Path) -> crate::crm::AuthState {
+    read_json(&dir.join("auth.json")).unwrap_or_default()
+}
+
+pub fn save_auth(dir: &Path, auth: &crate::crm::AuthState) -> std::io::Result<()> {
+    write_json(&dir.join("auth.json"), auth)
+}
+
 pub fn load_settings(dir: &Path) -> Settings {
     read_json::<Settings>(&dir.join("config.json")).unwrap_or_default().normalized()
 }

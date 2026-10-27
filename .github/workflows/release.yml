@@ -43,7 +43,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: FR予定ウィジェット ${{ github.ref_name }}
+          releaseName: F-RevoCRM Schedule Widget ${{ github.ref_name }}
           releaseBody: |
             Windows 用のインストーラー（`*_x64-setup.exe`）をダウンロードして実行してください。
             使い方は README を参照してください。

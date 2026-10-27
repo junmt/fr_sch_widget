@@ -67,7 +67,7 @@ mod tests {
     }
     #[test]
     fn n03_installed_dir_is_not_dev() {
-        assert!(!is_dev_build(Some(Path::new("C:/Users/u/AppData/Local/FR予定ウィジェット/app.exe"))));
+        assert!(!is_dev_build(Some(Path::new("C:/Users/u/AppData/Local/F-RevoCRM Schedule Widget/app.exe"))));
     }
     #[test]
     fn n04_similar_name_is_not_dev() {

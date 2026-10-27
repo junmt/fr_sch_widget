@@ -35,6 +35,11 @@ fn client(server: &ServerGuard) -> CrmClient {
     CrmClient::new(&server.url()).unwrap()
 }
 
+/// 覚えているトークンがない状態でログインする
+async fn login(c: &CrmClient, user: &str, key: &str) -> Result<Session, CrmError> {
+    c.login(user, key, &mut AuthState::default(), Utc::now()).await
+}
+
 /// 指定した offset・SELECT の種類の query に応答するモック
 async fn query_mock(server: &mut ServerGuard, offset: usize, select_all: bool, body: String, times: usize) -> Mock {
     let (from, to) = range();
@@ -299,7 +304,7 @@ async fn lg01_success_sends_md5() {
         .create_async()
         .await;
     let c = CrmClient::new(&format!("{}/crm/", server.url())).unwrap();
-    assert_eq!(c.login("jun", "SECRET").await.unwrap(), Session { name: "S1".into(), user_id: "19x5".into() });
+    assert_eq!(login(&c, "jun", "SECRET").await.unwrap(), Session { name: "S1".into(), user_id: "19x5".into() });
     ch.assert_async().await;
     lg.assert_async().await;
 }
@@ -308,7 +313,7 @@ async fn lg02_challenge_error_skips_login() {
     let mut server = Server::new_async().await;
     challenge_mock(&mut server, err("INTERNAL_SERVER_ERROR"), 1).await;
     let lg = login_mock(&mut server, ok(json!({})), 0).await;
-    assert!(matches!(client(&server).login("jun", "k").await, Err(CrmError::Api { .. })));
+    assert!(matches!(login(&client(&server), "jun", "k").await, Err(CrmError::Api { .. })));
     lg.assert_async().await;
 }
 #[tokio::test]
@@ -316,7 +321,7 @@ async fn lg03_no_token_skips_login() {
     let mut server = Server::new_async().await;
     challenge_mock(&mut server, ok(json!({})), 1).await;
     let lg = login_mock(&mut server, ok(json!({})), 0).await;
-    assert!(matches!(client(&server).login("jun", "k").await, Err(CrmError::BadResponse(_))));
+    assert!(matches!(login(&client(&server), "jun", "k").await, Err(CrmError::BadResponse(_))));
     lg.assert_async().await;
 }
 #[tokio::test]
@@ -324,7 +329,10 @@ async fn lg04_login_error() {
     let mut server = Server::new_async().await;
     challenge_mock(&mut server, ok(json!({"token": "T"})), 1).await;
     login_mock(&mut server, err("INVALID_USER_CREDENTIALS"), 1).await;
-    assert_eq!(client(&server).login("jun", "bad").await, Err(CrmError::InvalidCredentials));
+    // 1回目は認証の制限とみなす（AU-07）。制限の時刻を過ぎていれば本当の認証エラー（AU-09）
+    assert!(matches!(login(&client(&server), "jun", "bad").await, Err(CrmError::LoginBlocked { .. })));
+    let mut auth = AuthState { blocked_until: Some(Utc::now() - chrono::Duration::seconds(1)), ..Default::default() };
+    assert_eq!(client(&server).login("jun", "bad", &mut auth, Utc::now()).await, Err(CrmError::InvalidCredentials));
 }
 #[tokio::test]
 async fn lg05_lg06_lg07_incomplete_login_result() {
@@ -337,7 +345,7 @@ async fn lg05_lg06_lg07_incomplete_login_result() {
         let mut server = Server::new_async().await;
         challenge_mock(&mut server, ok(json!({"token": "T"})), 1).await;
         let lg = login_mock(&mut server, ok(body), 1).await;
-        assert!(matches!(client(&server).login("jun", "k").await, Err(CrmError::BadResponse(_))), "{id}");
+        assert!(matches!(login(&client(&server), "jun", "k").await, Err(CrmError::BadResponse(_))), "{id}");
         lg.assert_async().await;
     }
 }
@@ -494,7 +502,7 @@ async fn session_query(server: &mut ServerGuard, sess: &str, body: String, times
 
 async fn relogin(server: &ServerGuard, sess: &mut Option<Session>) -> Result<Vec<Value>, CrmError> {
     let (from, to) = range();
-    client(server).fetch_with_relogin(sess, "jun", "k", from, to).await
+    client(server).fetch_with_relogin(sess, &mut AuthState::default(), "jun", "k", from, to).await
 }
 
 fn new_session() -> Option<Session> {
@@ -519,7 +527,8 @@ async fn rl02_login_fails() {
     login_mock(&mut server, err("INVALID_USER_CREDENTIALS"), 1).await;
     let qm = session_query(&mut server, "NEW", ok(rows(1, 0)), 0).await;
     let mut sess = None;
-    assert_eq!(relogin(&server, &mut sess).await, Err(CrmError::InvalidCredentials));
+    // 新しいトークンでの失敗は、まず認証の制限とみなす（3.10 AU-07）
+    assert!(matches!(relogin(&server, &mut sess).await, Err(CrmError::LoginBlocked { .. })));
     assert_eq!(sess, None);
     qm.assert_async().await;
 }
@@ -574,7 +583,7 @@ async fn rl07_relogin_fails() {
     let lg = login_mock(&mut server, err("INVALID_USER_CREDENTIALS"), 1).await;
     session_query(&mut server, "SESS123", err("INVALID_SESSIONID"), 1).await;
     let mut sess = Some(session());
-    assert_eq!(relogin(&server, &mut sess).await, Err(CrmError::InvalidCredentials));
+    assert!(matches!(relogin(&server, &mut sess).await, Err(CrmError::LoginBlocked { .. })));
     assert_eq!(sess, None);
     lg.assert_async().await;
 }
@@ -621,4 +630,217 @@ async fn lo01_lo02_logout_posts_and_ignores_errors() {
         .await;
     client(&server).logout(&session()).await;
     m.assert_async().await;
+}
+
+// ===== 3.10 ログインの状態（トークンの使い回しと認証の制限） =====
+
+fn t0() -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339("2026-10-27T06:00:00Z").unwrap().with_timezone(&Utc)
+}
+
+fn challenge_for(server: &ServerGuard, token: &str, expires_at: DateTime<Utc>) -> Challenge {
+    Challenge {
+        endpoint: format!("{}/webservice.php", server.url()),
+        username: "jun".into(),
+        token: token.into(),
+        expires_at,
+    }
+}
+
+/// 指定したトークンでの login に応答するモック
+async fn login_with(server: &mut ServerGuard, token: &str, body: String, times: usize) -> Mock {
+    let key = format!("{:x}", md5::compute(format!("{token}k")));
+    server
+        .mock("POST", "/webservice.php")
+        .match_body(Matcher::AllOf(vec![q("operation", "login"), q("accessKey", &key)]))
+        .with_body(body)
+        .expect(times)
+        .create_async()
+        .await
+}
+
+fn session_ok() -> String {
+    ok(json!({"sessionName": "S1", "userId": "19x5"}))
+}
+
+#[test]
+fn cu01_cu04_challenge_usable() {
+    let c = Challenge { endpoint: "E".into(), username: "jun".into(), token: "T".into(), expires_at: t0() };
+    let margin = chrono::Duration::seconds(CHALLENGE_MARGIN_SECONDS);
+    assert!(c.usable("E", "jun", t0() - margin - chrono::Duration::seconds(1)), "CU-01");
+    assert!(!c.usable("E", "jun", t0() - margin), "CU-02 境界");
+    assert!(!c.usable("E", "jun", t0() + chrono::Duration::seconds(1)), "CU-02 期限切れ");
+    assert!(!c.usable("E", "other", t0() - chrono::Duration::minutes(3)), "CU-03 ユーザー");
+    assert!(!c.usable("OTHER", "jun", t0() - chrono::Duration::minutes(3)), "CU-04 CRM");
+}
+
+#[tokio::test]
+async fn au01_reuse_cached_token_without_getchallenge() {
+    let mut server = Server::new_async().await;
+    let ch = challenge_mock(&mut server, ok(json!({"token": "NEW"})), 0).await;
+    let lg = login_with(&mut server, "CACHED", session_ok(), 1).await;
+    let mut auth = AuthState {
+        challenge: Some(challenge_for(&server, "CACHED", t0() + chrono::Duration::minutes(3))),
+        blocked_until: Some(t0() + chrono::Duration::minutes(1)),
+    };
+    assert!(client(&server).login("jun", "k", &mut auth, t0()).await.is_ok());
+    assert_eq!(auth.challenge.as_ref().unwrap().token, "CACHED");
+    assert_eq!(auth.blocked_until, None);
+    ch.assert_async().await;
+    lg.assert_async().await;
+}
+#[tokio::test]
+async fn au02_cached_token_rejected_means_wrong_key() {
+    let mut server = Server::new_async().await;
+    let ch = challenge_mock(&mut server, ok(json!({"token": "NEW"})), 0).await;
+    login_with(&mut server, "CACHED", err("INVALID_USER_CREDENTIALS"), 1).await;
+    let mut auth = AuthState { challenge: Some(challenge_for(&server, "CACHED", t0() + chrono::Duration::minutes(3))), blocked_until: None };
+    assert_eq!(client(&server).login("jun", "k", &mut auth, t0()).await, Err(CrmError::InvalidCredentials));
+    assert_eq!(auth, AuthState::default());
+    ch.assert_async().await;
+}
+#[tokio::test]
+async fn au03_cached_token_gone_falls_back_to_getchallenge() {
+    let mut server = Server::new_async().await;
+    login_with(&mut server, "CACHED", err("INVALID_AUTH_TOKEN"), 1).await;
+    let ch = challenge_mock(&mut server, ok(json!({"token": "NEW", "serverTime": 1000, "expireTime": 1300})), 1).await;
+    let lg = login_with(&mut server, "NEW", session_ok(), 1).await;
+    let mut auth = AuthState { challenge: Some(challenge_for(&server, "CACHED", t0() + chrono::Duration::minutes(3))), blocked_until: None };
+    assert!(client(&server).login("jun", "k", &mut auth, t0()).await.is_ok());
+    assert_eq!(auth.challenge.as_ref().unwrap().token, "NEW");
+    ch.assert_async().await;
+    lg.assert_async().await;
+}
+#[tokio::test]
+async fn au04_au05_unusable_cache_uses_getchallenge() {
+    for (id, endpoint_ok, user, expires) in [
+        ("AU-04", true, "jun", t0() + chrono::Duration::seconds(CHALLENGE_MARGIN_SECONDS)),
+        ("AU-05 user", true, "other", t0() + chrono::Duration::minutes(3)),
+        ("AU-05 crm", false, "jun", t0() + chrono::Duration::minutes(3)),
+    ] {
+        let mut server = Server::new_async().await;
+        let ch = challenge_mock(&mut server, ok(json!({"token": "NEW"})), 1).await;
+        login_with(&mut server, "NEW", session_ok(), 1).await;
+        let mut c = challenge_for(&server, "CACHED", expires);
+        c.username = user.into();
+        if !endpoint_ok {
+            c.endpoint = "https://other/webservice.php".into();
+        }
+        let mut auth = AuthState { challenge: Some(c), blocked_until: None };
+        assert!(client(&server).login("jun", "k", &mut auth, t0()).await.is_ok(), "{id}");
+        assert_eq!(auth.challenge.as_ref().unwrap().token, "NEW", "{id}");
+        ch.assert_async().await;
+    }
+}
+#[tokio::test]
+async fn au06_fresh_success_is_remembered_with_server_lifetime() {
+    let mut server = Server::new_async().await;
+    challenge_mock(&mut server, ok(json!({"token": "NEW", "serverTime": 1000, "expireTime": 1300})), 1).await;
+    login_with(&mut server, "NEW", session_ok(), 1).await;
+    let mut auth = AuthState::default();
+    client(&server).login("jun", "k", &mut auth, t0()).await.unwrap();
+    assert_eq!(auth.challenge, Some(challenge_for(&server, "NEW", t0() + chrono::Duration::seconds(300))));
+    assert_eq!(auth.blocked_until, None);
+}
+#[tokio::test]
+async fn au07_first_fresh_failure_is_login_blocked() {
+    let mut server = Server::new_async().await;
+    challenge_mock(&mut server, ok(json!({"token": "UNSAVED", "serverTime": 1000, "expireTime": 1300})), 1).await;
+    login_with(&mut server, "UNSAVED", err("INVALID_USER_CREDENTIALS"), 1).await;
+    let mut auth = AuthState::default();
+    let until = t0() + chrono::Duration::seconds(300 + BLOCK_EXTRA_SECONDS);
+    assert_eq!(
+        client(&server).login("jun", "k", &mut auth, t0()).await,
+        Err(CrmError::LoginBlocked { retry_at: until.with_timezone(&Local) })
+    );
+    assert_eq!(auth, AuthState { challenge: None, blocked_until: Some(until) });
+    // 失敗したトークンは覚えない（DB にないので、使い回すと必ず失敗する）
+}
+#[tokio::test]
+async fn au08_failure_while_blocked_keeps_waiting() {
+    let mut server = Server::new_async().await;
+    challenge_mock(&mut server, ok(json!({"token": "UNSAVED"})), 1).await;
+    login_with(&mut server, "UNSAVED", err("INVALID_USER_CREDENTIALS"), 1).await;
+    let until = t0() + chrono::Duration::minutes(4);
+    let mut auth = AuthState { challenge: None, blocked_until: Some(until) };
+    assert_eq!(
+        client(&server).login("jun", "k", &mut auth, t0()).await,
+        Err(CrmError::LoginBlocked { retry_at: until.with_timezone(&Local) })
+    );
+    assert_eq!(auth.blocked_until, Some(until));
+}
+#[tokio::test]
+async fn au09_failure_after_waiting_is_real_credential_error() {
+    let mut server = Server::new_async().await;
+    challenge_mock(&mut server, ok(json!({"token": "T"})), 1).await;
+    login_with(&mut server, "T", err("INVALID_USER_CREDENTIALS"), 1).await;
+    for now in [t0(), t0() + chrono::Duration::seconds(1)] {
+        let mut auth = AuthState { challenge: None, blocked_until: Some(t0()) };
+        assert_eq!(client(&server).login("jun", "k", &mut auth, now).await, Err(CrmError::InvalidCredentials), "{now}");
+        assert_eq!(auth.blocked_until, None);
+    }
+}
+#[tokio::test]
+async fn au10_other_errors_keep_state() {
+    let mut server = Server::new_async().await;
+    challenge_mock(&mut server, ok(json!({"token": "T"})), 1).await;
+    login_with(&mut server, "T", err("ACCESS_DENIED"), 1).await;
+    let before = AuthState { challenge: None, blocked_until: Some(t0() + chrono::Duration::minutes(2)) };
+    let mut auth = before.clone();
+    assert_eq!(client(&server).login("jun", "k", &mut auth, t0()).await, Err(CrmError::AccessDenied));
+    assert_eq!(auth, before);
+}
+#[tokio::test]
+async fn au11_success_while_blocked_clears_block() {
+    // 不具合が直った CRM（getchallenge が有効なトークンを返す）では、制限中でもログインできる
+    let mut server = Server::new_async().await;
+    challenge_mock(&mut server, ok(json!({"token": "T"})), 1).await;
+    login_with(&mut server, "T", session_ok(), 1).await;
+    let mut auth = AuthState { challenge: None, blocked_until: Some(t0() + chrono::Duration::minutes(2)) };
+    assert!(client(&server).login("jun", "k", &mut auth, t0()).await.is_ok());
+    assert_eq!(auth.blocked_until, None);
+    assert_eq!(auth.challenge.as_ref().unwrap().token, "T");
+}
+#[tokio::test]
+async fn au12_missing_or_odd_lifetime_defaults_to_5_minutes() {
+    for (id, body) in [
+        ("なし", json!({"token": "T"})),
+        ("逆転", json!({"token": "T", "serverTime": 1300, "expireTime": 1000})),
+        ("文字列", json!({"token": "T", "serverTime": "a", "expireTime": "b"})),
+    ] {
+        let mut server = Server::new_async().await;
+        challenge_mock(&mut server, ok(body), 1).await;
+        login_with(&mut server, "T", session_ok(), 1).await;
+        let mut auth = AuthState::default();
+        client(&server).login("jun", "k", &mut auth, t0()).await.unwrap();
+        assert_eq!(auth.challenge.unwrap().expires_at, t0() + chrono::Duration::seconds(300), "{id}");
+    }
+}
+#[tokio::test]
+async fn au13_lifetime_is_capped_at_one_hour() {
+    let mut server = Server::new_async().await;
+    challenge_mock(&mut server, ok(json!({"token": "T", "serverTime": 0, "expireTime": 999999})), 1).await;
+    login_with(&mut server, "T", session_ok(), 1).await;
+    let mut auth = AuthState::default();
+    client(&server).login("jun", "k", &mut auth, t0()).await.unwrap();
+    assert_eq!(auth.challenge.unwrap().expires_at, t0() + chrono::Duration::hours(1));
+}
+#[test]
+fn au14_login_blocked_error() {
+    let at = Local::now();
+    let e = CrmError::LoginBlocked { retry_at: at };
+    assert!(!e.needs_user_action());
+    assert_eq!(e.retry_at(), Some(at));
+    assert!(e.to_string().contains(&at.format("%H:%M").to_string()), "{e}");
+    assert_eq!(CrmError::Network("x".into()).retry_at(), None);
+}
+#[test]
+fn au15_auth_state_roundtrip_and_partial() {
+    let auth = AuthState {
+        challenge: Some(Challenge { endpoint: "E".into(), username: "u".into(), token: "T".into(), expires_at: t0() }),
+        blocked_until: Some(t0()),
+    };
+    let text = serde_json::to_string(&auth).unwrap();
+    assert_eq!(serde_json::from_str::<AuthState>(&text).unwrap(), auth);
+    assert_eq!(serde_json::from_str::<AuthState>("{}").unwrap(), AuthState::default());
 }

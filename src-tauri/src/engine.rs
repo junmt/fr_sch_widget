@@ -79,6 +79,8 @@ pub struct Engine {
     pub status: SyncStatus,
     /// 自動で再試行するエラーが続いた回数
     pub failures: u32,
+    /// 再試行する時刻が決まっているとき（CRM の認証の制限）
+    pub retry_at: Option<DateTime<Local>>,
 }
 
 impl Engine {
@@ -95,6 +97,7 @@ impl Engine {
             baseline: Baseline::None,
             status: SyncStatus { state: SyncState::Ok, message: None, last_updated, fetching: false },
             failures: 0,
+            retry_at: None,
         };
         for i in &mut e.items {
             i.badge = None;
@@ -152,6 +155,7 @@ impl Engine {
         self.items = new_items;
         self.baseline = Baseline::Full;
         self.failures = 0;
+        self.retry_at = None;
         self.status = SyncStatus { state: SyncState::Ok, message: None, last_updated: Some(now), fetching: false };
         notices
     }
@@ -162,17 +166,27 @@ impl Engine {
         }
         self.status.fetching = false;
         self.status.message = Some(err.to_string());
+        self.retry_at = err.retry_at();
         if err.needs_user_action() {
             self.status.state = SyncState::AuthError;
         } else {
             self.status.state = SyncState::Error;
-            self.failures = self.failures.saturating_add(1);
+            // 再試行の時刻が決まっているものは、間隔を延ばす対象にしない
+            if self.retry_at.is_none() {
+                self.failures = self.failures.saturating_add(1);
+            }
         }
     }
 
     /// 認証・権限のエラーで止まっているか（手動更新か設定の保存で再開する）
     pub fn is_paused(&self) -> bool {
         matches!(self.status.state, SyncState::AuthError | SyncState::Unconfigured)
+    }
+
+    /// 次に取得する時刻。再試行の時刻が決まっていればそれ、なければ `now + next_delay`
+    pub fn next_fetch_at(&self, now: DateTime<Local>, interval_minutes: u32) -> DateTime<Local> {
+        self.retry_at
+            .unwrap_or_else(|| now + chrono::Duration::from_std(self.next_delay(interval_minutes)).unwrap_or_default())
     }
 
     /// 次の取得までの間隔。続けて失敗したら 2倍 → 4倍 に延ばす（上限15分）

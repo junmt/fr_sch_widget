@@ -36,7 +36,7 @@ pub fn create(app: &App, always_on_top: bool) -> tauri::Result<()> {
 
     let icon = TrayIconBuilder::with_id("main")
         .icon(Image::from_bytes(ICON)?)
-        .tooltip("今日の予定")
+        .tooltip("F-RevoCRM Schedule Widget")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {

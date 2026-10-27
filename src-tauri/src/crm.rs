@@ -1,7 +1,8 @@
 //! F-RevoCRM 標準 Webservice API（webservice.php）のクライアント
 
 use crate::schedule::{build_query, QUERY_PAGE_SIZE};
-use chrono::NaiveDate;
+use chrono::{DateTime, Local, NaiveDate, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -22,6 +23,9 @@ pub enum CrmError {
     Api { code: String, message: String },
     #[error("CRMから予期しない応答がありました")]
     BadResponse(String),
+    /// F-RevoCRM の不具合で、前の認証から5分たつまではログインできない（`retry_at` に自動で再試行する）
+    #[error("CRM の認証の制限（5分に1回）のため、{} に再試行します", .retry_at.format("%H:%M"))]
+    LoginBlocked { retry_at: DateTime<Local> },
 }
 
 impl CrmError {
@@ -42,6 +46,57 @@ impl CrmError {
     pub fn needs_user_action(&self) -> bool {
         matches!(self, CrmError::InvalidCredentials | CrmError::AccessDenied)
     }
+
+    /// 次に再試行する時刻が決まっているエラーなら、その時刻
+    pub fn retry_at(&self) -> Option<DateTime<Local>> {
+        match self {
+            CrmError::LoginBlocked { retry_at } => Some(*retry_at),
+            _ => None,
+        }
+    }
+}
+
+/// getchallenge の結果が来なかったときのトークンの有効期間（F-RevoCRM は5分）
+const DEFAULT_CHALLENGE_SECONDS: i64 = 300;
+/// 有効期限ぎりぎりのトークンは使わない（時計のずれと通信の時間の分）
+pub const CHALLENGE_MARGIN_SECONDS: i64 = 15;
+/// 認証の制限が解けたあと、少し待ってから再試行する
+pub const BLOCK_EXTRA_SECONDS: i64 = 10;
+
+/// ログインに成功したチャレンジトークン（CRM の DB に保存されていることが確かなもの）
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Challenge {
+    pub endpoint: String,
+    pub username: String,
+    pub token: String,
+    /// この PC の時計での有効期限
+    pub expires_at: DateTime<Utc>,
+}
+
+impl Challenge {
+    /// まだ使えるか（同じ CRM・同じユーザーで、有効期限まで余裕がある）
+    pub fn usable(&self, endpoint: &str, username: &str, now: DateTime<Utc>) -> bool {
+        self.endpoint == endpoint
+            && self.username == username
+            && now < self.expires_at - chrono::Duration::seconds(CHALLENGE_MARGIN_SECONDS)
+    }
+}
+
+/// ログインの状態（起動し直しても引き継ぐ）。
+///
+/// F-RevoCRM の不具合への対策：CRM は1ユーザーに有効なトークンを1つしか持てないのに、
+/// 有効なトークンがある間（5分）に getchallenge を呼ぶと、保存できなかった新しいトークンを返す。
+/// そのトークンでの login は必ず「ユーザー名かアクセスキーが違う」になる。そこで、
+/// - ログインに成功したトークンを覚えておき、有効な間は getchallenge を呼ばずに使い回す
+/// - 新しいトークンでの失敗は、まず「認証の制限」とみなし、トークンが切れる5分後に再試行する。
+///   それでも失敗したら、本当にアクセスキーが違うとみなす
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct AuthState {
+    pub challenge: Option<Challenge>,
+    /// 認証の制限が解けるはずの時刻（この時刻を過ぎても失敗したら、本当の認証エラー）
+    pub blocked_until: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -129,13 +184,73 @@ impl CrmClient {
         Self::parse(self.http.post(&self.endpoint).form(form).send().await).await
     }
 
-    /// getchallenge → login
-    pub async fn login(&self, username: &str, access_key: &str) -> Result<Session, CrmError> {
+    /// ログインする。使えるトークンがあれば使い回し、なければ getchallenge から始める（`AuthState` を参照）
+    pub async fn login(
+        &self,
+        username: &str,
+        access_key: &str,
+        auth: &mut AuthState,
+        now: DateTime<Utc>,
+    ) -> Result<Session, CrmError> {
+        if let Some(c) = auth.challenge.clone().filter(|c| c.usable(&self.endpoint, username, now)) {
+            match self.login_with_token(username, access_key, &c.token).await {
+                Ok(s) => {
+                    auth.blocked_until = None;
+                    return Ok(s);
+                }
+                // DB にあるはずのトークンで失敗した＝アクセスキーが違う
+                Err(CrmError::InvalidCredentials) => {
+                    auth.challenge = None;
+                    auth.blocked_until = None;
+                    return Err(CrmError::InvalidCredentials);
+                }
+                // トークンが消えていた（CRM 側で削除された、時計が大きくずれているなど）。取り直す
+                Err(CrmError::Api { code, .. }) if code == "INVALID_AUTH_TOKEN" => auth.challenge = None,
+                Err(e) => return Err(e),
+            }
+        }
+
         let challenge = self.get(&[("operation", "getchallenge"), ("username", username)]).await?;
         let token = challenge
             .get("token")
             .and_then(Value::as_str)
-            .ok_or_else(|| CrmError::BadResponse("getchallenge に token がありません".into()))?;
+            .ok_or_else(|| CrmError::BadResponse("getchallenge に token がありません".into()))?
+            .to_string();
+        let lifetime = match (challenge.get("expireTime").and_then(Value::as_i64), challenge.get("serverTime").and_then(Value::as_i64)) {
+            (Some(exp), Some(server)) if exp > server => exp - server,
+            _ => DEFAULT_CHALLENGE_SECONDS,
+        };
+        let expires_at = now + chrono::Duration::seconds(lifetime.min(3600));
+
+        match self.login_with_token(username, access_key, &token).await {
+            Ok(s) => {
+                auth.challenge = Some(Challenge {
+                    endpoint: self.endpoint.clone(),
+                    username: username.to_string(),
+                    token,
+                    expires_at,
+                });
+                auth.blocked_until = None;
+                Ok(s)
+            }
+            Err(CrmError::InvalidCredentials) => match auth.blocked_until {
+                // 制限が解けるまで待ったのに失敗した＝アクセスキーが違う
+                Some(until) if now >= until => {
+                    auth.blocked_until = None;
+                    Err(CrmError::InvalidCredentials)
+                }
+                Some(until) => Err(CrmError::LoginBlocked { retry_at: until.with_timezone(&Local) }),
+                None => {
+                    let until = expires_at + chrono::Duration::seconds(BLOCK_EXTRA_SECONDS);
+                    auth.blocked_until = Some(until);
+                    Err(CrmError::LoginBlocked { retry_at: until.with_timezone(&Local) })
+                }
+            },
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn login_with_token(&self, username: &str, access_key: &str, token: &str) -> Result<Session, CrmError> {
         let hashed = format!("{:x}", md5::compute(format!("{token}{access_key}")));
         let result = self
             .post(&[("operation", "login"), ("username", username), ("accessKey", &hashed)])
@@ -179,9 +294,11 @@ impl CrmClient {
     /// セッションがなければログインしてから取得する。
     /// 使い回したセッションが切れていたら、1回だけログインし直して取り直す。
     /// 失敗したときは、使えなくなったセッションを `session` から消す。
+    #[allow(clippy::too_many_arguments)]
     pub async fn fetch_with_relogin(
         &self,
         session: &mut Option<Session>,
+        auth: &mut AuthState,
         username: &str,
         access_key: &str,
         from: NaiveDate,
@@ -191,7 +308,7 @@ impl CrmClient {
         loop {
             let reused = session.is_some();
             if !reused {
-                *session = Some(self.login(username, access_key).await?);
+                *session = Some(self.login(username, access_key, auth, Utc::now()).await?);
                 log::info!("ログインしました");
             }
             let current = session.clone().expect("セッションは直前に作った");

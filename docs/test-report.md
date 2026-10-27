@@ -1,17 +1,17 @@
-# F-RevoCRM 今日の予定ウィジェット テスト結果報告書
+# F-RevoCRM Schedule Widget テスト結果報告書
 
 - 実施日: 2026-10-27
-- 対象: テスト仕様書 `docs/test-specification.md` v1.2
+- 対象: テスト仕様書 `docs/test-specification.md` v1.3
 
 ## 1. 結果の概要
 
 | 種類 | 件数 | 成功 | 失敗 | 実行方法 |
 |---|---|---|---|---|
-| ユニットテスト（Rust） | 252 | 252 | 0 | Windows 上で `cargo test --lib` |
+| ユニットテスト（Rust） | 273 | 273 | 0 | Windows 上で `cargo test --lib` |
 | ユニットテスト（TypeScript） | 61 | 61 | 0 | `npm test`（vitest） |
-| ミューテーション（Rust） | 35 | 35 検出 | 0 見逃し | 3章 |
+| ミューテーション（Rust） | 39 | 39 検出 | 0 見逃し | 3章 |
 | ミューテーション（TypeScript） | 8 | 8 検出 | 0 見逃し | 3章 |
-| 結合テスト（手動） | 30 | - | - | **未実施**（4章） |
+| 結合テスト（手動） | 32 | - | - | **未実施**（4章） |
 
 - テスト仕様書の2〜7章のテストID（334件）は、すべてテストコードの関数名またはテスト名に含まれていることを、スクリプトで確認した。
 - リリースビルド（`npm run tauri build`）が通り、インストーラー（NSIS、約1.7MB）ができることを確認した（自動アップデートの署名なし。署名付きのビルドは GitHub Actions のリリースで行う）。ビルド時の警告は0件。
@@ -31,9 +31,9 @@
 | モジュール | テスト仕様書 | 件数 |
 |---|---|---|
 | schedule.rs | 2章 | 99 |
-| crm.rs | 3章 | 47 |
+| crm.rs | 3章 | 63 |
 | config.rs | 4章 | 31 |
-| engine.rs | 5章 | 35 |
+| engine.rs | 5章 | 41 |
 | text.rs | 6.1〜6.3 | 19 |
 | window_pos.rs | 6.4 | 10 |
 | notify.rs | 6.5 | 5 |
@@ -78,6 +78,10 @@
 | M31 | text.rs | `if s.chars().count() > TOOLTIP_MAX_CHARS {` → `if s.chars().count() >= TOOLTIP_MAX_CHARS {` | TT-06 | 1 | 検出 |
 | M32 | text.rs | `Notice::Added(i) \| Notice::Changed(_, i) \| Notice::Reminder(i, _) => Some(&i.id),` → `Notice::Added(i) \| Notice::Changed(i, _) \| Notice::Reminder(i, _) => Some(&i.id),` | NI-01 | 1 | 検出 |
 | M33 | notify.rs | `d.ends_with("target/debug")` → `d.ends_with("debug")` | N-04 | 1 | 検出 |
+| M36 | crm.rs | `now < expires_at - 15秒` → `now <= expires_at - 15秒` | CU-02 | 2 | 検出 |
+| M37 | crm.rs | `now >= until` → `now > until` | AU-09 | 1 | 検出 |
+| M38 | crm.rs | 新しいトークンでの1回目の失敗で、LoginBlocked ではなくすぐ InvalidCredentials を返す | AU-07 | 4 | 検出 |
+| M39 | crm.rs | 使い回したトークンでの失敗を InvalidCredentials にせず、新しいトークンを取り直す | AU-02 | 1 | 検出 |
 | M34 | updater.rs | `now - t >= Duration::hours(..)` → `now - t > Duration::hours(..)` | UP-03 | 1 | 検出 |
 | M35 | updater.rs | `now < t \|\| now - t >= ..` → `now - t >= ..` | UP-05 | 1 | 検出 |
 | T01 | logic.ts | `if (start - t <= soonMinutes * 60_000) return "soon";` → `if (start - t < soonMinutes * 60_000) return "soon";` | PH-08 | 1 | 検出 |
@@ -109,3 +113,4 @@
 | 4 | 使われていない関数（`mask_session`）と、テストでしか使わないメソッド（`Diff::is_empty`）があり、ビルドで警告が出ていた | `mask_session` は削除し、sessionName が通信エラーの文言に出ないことを MS-01 で確認する形にした。`is_empty` はテスト用にした |
 | 5 | 判定のロジックが Tauri に依存する場所（ポーリングのループ、設定の保存、ウィンドウの配置など）にあり、テストできなかった | `should_fetch`、`is_resumed`、`fetch_with_relogin`、`key_action`、`validate_url`、`record_url`、`needs_reposition`、`top_right`、`is_dev_build` として切り出し、デシジョン表でテストした |
 | 6 | 実際の F-RevoCRM（社内）で、予定の時刻が9時間ずれた。`query` は UTC で返すと考えていたが、実際は CRM サーバーのタイムゾーン（F-RevoCRM の既定は Asia/Tokyo）で返していた。ユニットテストは「UTC で返す」という誤った前提をそのまま検証していたため、見つけられなかった | 設定に「CRM サーバーのタイムゾーン」を追加し、既定を「PC と同じ」にした（v0.1.3）。不具合の再現テスト BT-05 と、PR-18・PR-19・LS-07 を追加した |
+| 7 | 実際の F-RevoCRM（社内）で「ログインできません」になった。F-RevoCRM の不具合で、前の認証から5分以内の認証は必ず失敗するため（接続テストの直後の取得、再起動など） | ログインに成功したトークンを覚えて使い回し、新しいトークンでの1回目の失敗は5分待って再試行するようにした（v0.1.4、仕様書 5.2）。テスト CU・AU・LB・NF を追加した |

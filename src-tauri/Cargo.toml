@@ -1,7 +1,7 @@
 [package]
 name = "fr-sch-widget"
-version = "0.1.3"
-description = "F-RevoCRM 今日の予定ウィジェット"
+version = "0.1.4"
+description = "F-RevoCRM Schedule Widget（F-RevoCRM の今日の予定を表示する Windows ウィジェット）"
 edition = "2021"
 
 [lib]

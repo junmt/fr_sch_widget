@@ -458,3 +458,58 @@ fn cc02_cache_after_success() {
     assert_eq!(c.items.len(), 2);
     assert!(c.items.iter().all(|i| i.badge.is_none()));
 }
+
+// ===== 5.9 認証の制限で待つ（LoginBlocked） =====
+
+fn blocked(at: &str) -> CrmError {
+    CrmError::LoginBlocked { retry_at: local(at) }
+}
+
+#[test]
+fn lb01_login_blocked_waits_until_retry_time() {
+    let mut e = engine_with(Baseline::Full);
+    e.on_error(&blocked("2026-10-27 09:05"));
+    assert_eq!(e.status.state, SyncState::Error);
+    assert!(!e.is_paused());
+    assert_eq!(e.failures, 0); // 間隔を延ばす対象にしない
+    assert_eq!(e.retry_at, Some(local("2026-10-27 09:05")));
+    assert_eq!(e.baseline, Baseline::Silent);
+    assert!(e.status.message.as_deref().unwrap().contains("09:05"));
+    assert_error_keeps_data(&e, &blocked("2026-10-27 09:05"));
+}
+#[test]
+fn lb02_next_fetch_at_uses_retry_time() {
+    let mut e = engine_with(Baseline::Full);
+    e.on_error(&blocked("2026-10-27 09:05"));
+    assert_eq!(e.next_fetch_at(local("2026-10-27 09:00"), 3), local("2026-10-27 09:05"));
+}
+#[test]
+fn lb03_success_clears_retry_time() {
+    let mut e = engine_with(Baseline::Full);
+    e.on_error(&blocked("2026-10-27 09:05"));
+    next_fetch(&mut e, &Settings::default());
+    assert_eq!(e.retry_at, None);
+    assert_eq!(e.next_fetch_at(local("2026-10-27 09:05"), 3), local("2026-10-27 09:08"));
+}
+#[test]
+fn lb04_other_error_clears_retry_time_and_backs_off() {
+    let mut e = engine_with(Baseline::Full);
+    e.on_error(&blocked("2026-10-27 09:05"));
+    e.on_error(&CrmError::Network("x".into()));
+    assert_eq!(e.retry_at, None);
+    assert_eq!(e.failures, 1);
+    assert_eq!(e.next_fetch_at(local("2026-10-27 09:05"), 3), local("2026-10-27 09:11"));
+}
+#[test]
+fn lb05_real_credential_error_after_waiting_pauses() {
+    let mut e = engine_with(Baseline::Full);
+    e.on_error(&blocked("2026-10-27 09:05"));
+    e.on_error(&CrmError::InvalidCredentials);
+    assert_eq!(e.retry_at, None);
+    assert!(e.is_paused());
+}
+#[test]
+fn nf01_next_fetch_at_without_retry_time() {
+    let e = engine_with(Baseline::Full);
+    assert_eq!(e.next_fetch_at(local("2026-10-27 09:00"), 3), local("2026-10-27 09:03"));
+}
