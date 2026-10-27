@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>今日の予定</title>
+    <link rel="stylesheet" href="/src/widget.css" />
+  </head>
+  <body>
+    <div id="widget" class="widget">
+      <header id="header" class="header" title="ドラッグで移動 / ダブルクリックで折りたたみ">
+        <div class="header-row">
+          <span id="date" class="date"></span>
+          <span id="count" class="count"></span>
+          <button id="refresh" class="icon-btn" type="button" title="今すぐ更新" aria-label="今すぐ更新">⟳</button>
+        </div>
+        <div id="next" class="next"></div>
+        <div id="compact" class="compact-line"></div>
+      </header>
+      <main id="list" class="list"></main>
+      <footer class="footer">
+        <span id="status" class="status"></span>
+        <button id="settings" class="icon-btn" type="button" title="設定" aria-label="設定">⚙</button>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

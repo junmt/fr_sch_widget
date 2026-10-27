@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: 画面のテスト（TypeScript）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test
+
+  windows:
+    name: Rust のテストとビルド（Windows）
+    runs-on: windows-latest
+    needs: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+      # tauri::generate_context! が dist を埋め込むため、テストの前に画面をビルドしておく
+      - run: npm run build
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test --lib
+      - run: npm run tauri build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error

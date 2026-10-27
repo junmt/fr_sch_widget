@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>設定 - 今日の予定ウィジェット</title>
+    <link rel="stylesheet" href="/src/settings.css" />
+  </head>
+  <body>
+    <form id="form" novalidate>
+      <section>
+        <h2>接続</h2>
+        <label>CRM の URL
+          <input id="crmUrl" type="url" placeholder="https://crm.example.co.jp/frevocrm" required />
+        </label>
+        <p id="httpWarn" class="warn" hidden>⚠ HTTPS ではありません。アクセスキーが暗号化されずに送られます。</p>
+        <label>ユーザー名
+          <input id="username" type="text" autocomplete="username" required />
+        </label>
+        <label>アクセスキー
+          <input id="accessKey" type="password" autocomplete="off" />
+        </label>
+        <p class="help">
+          F-RevoCRM の右上のユーザーメニュー →「マイ設定」→「ユーザーの詳細」にある「アクセスキー」を貼り付けてください。
+          アクセスキーは Windows の資格情報マネージャーに保存されます。
+        </p>
+        <div class="row">
+          <button id="test" type="button">接続テスト</button>
+          <span id="testResult" class="result"></span>
+        </div>
+      </section>
+
+      <section>
+        <h2>更新と通知</h2>
+        <label class="inline">更新間隔
+          <input id="intervalMinutes" type="number" min="1" max="30" step="1" /> 分（1〜30）
+        </label>
+        <label class="inline">開始前のリマインド
+          <input id="reminderMinutes" type="text" placeholder="10,1" /> 分前（カンマ区切り。空なら通知しない）
+        </label>
+        <label class="inline">「直前」とみなす時間
+          <input id="soonMinutes" type="number" min="0" max="1440" step="1" /> 分
+        </label>
+        <label class="check"><input id="notifyNewChanged" type="checkbox" /> 新しい予定・時刻の変更を通知する</label>
+        <label class="check"><input id="notifyDeleted" type="checkbox" /> 予定の削除を通知する</label>
+      </section>
+
+      <section>
+        <h2>表示</h2>
+        <label>表示する活動種別
+          <input id="activityTypes" type="text" placeholder="例: Call, Meeting（空ならすべて）" />
+        </label>
+        <label class="check"><input id="showHeld" type="checkbox" /> 完了（Held）の予定を表示する</label>
+        <label class="check"><input id="showNotHeld" type="checkbox" /> 中止（Not Held）の予定を表示する</label>
+        <label class="check"><input id="alwaysOnTop" type="checkbox" /> 常に最前面に表示する</label>
+        <label class="inline">不透明度
+          <input id="opacity" type="range" min="50" max="100" step="5" /> <span id="opacityValue"></span>
+        </label>
+        <label class="inline">テーマ
+          <select id="theme">
+            <option value="system">Windows に合わせる</option>
+            <option value="light">ライト</option>
+            <option value="dark">ダーク</option>
+          </select>
+        </label>
+        <label class="check"><input id="autostart" type="checkbox" /> Windows の起動時に自動で起動する</label>
+      </section>
+
+      <div class="actions">
+        <span id="saveResult" class="result"></span>
+        <button id="close" type="button">閉じる</button>
+        <button id="save" type="submit" class="primary">保存</button>
+      </div>
+    </form>
+    <script type="module" src="/src/settings.ts"></script>
+  </body>
+</html>

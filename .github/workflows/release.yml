@@ -1,0 +1,48 @@
+name: Release
+
+# v0.1.0 のようなタグを push すると、インストーラーを作って GitHub のリリースに公開する
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: タグと tauri.conf.json のバージョンが同じか確認する
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ("v$version" -ne "${{ github.ref_name }}") {
+            Write-Error "タグ ${{ github.ref_name }} と tauri.conf.json の version ($version) が違います"
+            exit 1
+          }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test --lib
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: FR予定ウィジェット ${{ github.ref_name }}
+          releaseBody: |
+            Windows 用のインストーラー（`*_x64-setup.exe`）をダウンロードして実行してください。
+            使い方は README を参照してください。
+          releaseDraft: false
+          prerelease: false
