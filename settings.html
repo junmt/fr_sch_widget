@@ -14,6 +14,13 @@
           <input id="crmUrl" type="url" placeholder="https://crm.example.co.jp/frevocrm" required />
         </label>
         <p id="httpWarn" class="warn" hidden>⚠ HTTPS ではありません。アクセスキーが暗号化されずに送られます。</p>
+        <label class="inline">CRM サーバーのタイムゾーン
+          <select id="crmTimeZone">
+            <option value="local">PC と同じ（日本時間など。F-RevoCRM の既定）</option>
+            <option value="utc">UTC（本家 vtiger の既定）</option>
+          </select>
+        </label>
+        <p class="help">予定の時刻が CRM の画面とずれるときは切り替えてください（CRM の config.inc.php の $default_timezone に合わせます）。</p>
         <label>ユーザー名
           <input id="username" type="text" autocomplete="username" required />
         </label>

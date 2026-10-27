@@ -72,6 +72,7 @@ fn ds01_defaults_match_specification() {
     let s = Settings::default();
     assert_eq!(s.crm_url, "");
     assert_eq!(s.username, "");
+    assert_eq!(s.crm_time_zone, CrmTimeZone::Local);
     assert_eq!(s.interval_minutes, 3);
     assert_eq!(s.reminder_minutes, vec![10]);
     assert_eq!(s.soon_minutes, 15);
@@ -181,9 +182,12 @@ fn ls02_roundtrip() {
         activity_types: vec!["Call".into()],
         theme: "dark".into(),
         autostart: false,
+        crm_time_zone: CrmTimeZone::Utc,
         ..Default::default()
     };
     save_settings(&dir, &s).unwrap();
+    let text = std::fs::read_to_string(dir.join("config.json")).unwrap();
+    assert!(text.contains(r#""crmTimeZone": "utc""#), "{text}");
     assert_eq!(load_settings(&dir), s);
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -195,6 +199,17 @@ fn ls03_partial_file_uses_defaults() {
     let s = load_settings(&dir);
     assert_eq!(s.crm_url, "https://y");
     assert_eq!(s, Settings { crm_url: "https://y".into(), username: "u".into(), ..Default::default() });
+    let _ = std::fs::remove_dir_all(&dir);
+}
+#[test]
+fn ls07_unknown_time_zone_value_falls_back_to_defaults() {
+    let dir = temp_dir("ls07");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("config.json"), r#"{"crmTimeZone":"local","username":"u"}"#).unwrap();
+    assert_eq!(load_settings(&dir).crm_time_zone, CrmTimeZone::Local);
+    std::fs::write(dir.join("config.json"), r#"{"crmTimeZone":"Asia/Tokyo","username":"u"}"#).unwrap();
+    // 読めない値があるとファイル全体が読めないので既定値になる（LS-04 と同じ扱い）
+    assert_eq!(load_settings(&dir), Settings::default());
     let _ = std::fs::remove_dir_all(&dir);
 }
 #[test]

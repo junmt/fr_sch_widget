@@ -3,7 +3,7 @@
 use crate::config::{self, credentials, KeyAction, Settings};
 use crate::crm::{record_url, CrmClient, CrmError, Session};
 use crate::engine::{is_resumed, should_fetch, Engine, Notice, SyncState, SyncStatus};
-use crate::schedule::{build_today, query_range, ScheduleItem};
+use crate::schedule::{build_today, query_range, CrmTimeZone, ScheduleItem};
 use crate::{notify, text, tray};
 use chrono::{DateTime, Local, NaiveDate};
 use serde::Serialize;
@@ -183,7 +183,7 @@ async fn fetch_once(app: &AppHandle) {
             Ok(records) => {
                 let today = now.date_naive();
                 e.roll_day(today);
-                let items = build_today(&records, &Local, today, &settings.filter());
+                let items = build_today(&records, settings.crm_time_zone, &Local, today, &settings.filter());
                 log::info!("取得しました: {}件（今日の表示 {}件）", records.len(), items.len());
                 notices = e.on_success(items, now, &settings);
                 save = e.cache();
@@ -387,7 +387,12 @@ pub async fn save_settings(app: AppHandle, settings: Settings, access_key: Optio
 }
 
 #[tauri::command]
-pub async fn test_connection(crm_url: String, username: String, access_key: Option<String>) -> Result<String, String> {
+pub async fn test_connection(
+    crm_url: String,
+    username: String,
+    access_key: Option<String>,
+    crm_time_zone: Option<CrmTimeZone>,
+) -> Result<String, String> {
     let url = crate::crm::normalize_url(&crm_url);
     let username = username.trim().to_string();
     config::validate_url(&url)?;
@@ -407,7 +412,8 @@ pub async fn test_connection(crm_url: String, username: String, access_key: Opti
     let result = client.fetch_events(&session, from, to).await;
     client.logout(&session).await;
     let records = result.map_err(|e| e.to_string())?;
-    let count = build_today(&records, &Local, today, &Settings::default().filter()).len();
+    let source = crm_time_zone.unwrap_or_default();
+    let count = build_today(&records, source, &Local, today, &Settings::default().filter()).len();
     Ok(format!("接続できました（今日の予定 {count}件）"))
 }
 

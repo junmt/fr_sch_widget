@@ -54,7 +54,7 @@ mod local_minute {
 /// 終了時刻が空の予定の長さ（仕様 5.3）
 const DEFAULT_DURATION_MINUTES: i64 = 30;
 
-/// `query` の取得範囲（UTC の日付と比べられるため、今日の前後1日に広げる）
+/// `query` の取得範囲（DB のタイムゾーンの日付と比べられるため、今日の前後1日に広げる）
 pub fn query_range(today: NaiveDate) -> (NaiveDate, NaiveDate) {
     (today - Duration::days(1), today + Duration::days(1))
 }
@@ -99,28 +99,44 @@ pub fn decode_html(s: &str) -> String {
         .replace("&amp;", "&")
 }
 
-fn to_local<Tz: TimeZone>(utc: NaiveDateTime, tz: &Tz) -> NaiveDateTime {
-    Utc.from_utc_datetime(&utc).with_timezone(tz).naive_local()
+/// CRM の DB に保存されている日時のタイムゾーン。
+/// vtiger 系はサーバーの PHP のタイムゾーン（config.inc.php の `$default_timezone`）で保存し、
+/// `query` はその値をそのまま返す。F-RevoCRM の既定は Asia/Tokyo、本家 vtiger の既定は UTC。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CrmTimeZone {
+    /// PC と同じタイムゾーン（変換しない）
+    #[default]
+    Local,
+    /// UTC（PC のタイムゾーンに直す）
+    Utc,
 }
 
-/// `query` の1レコード（UTC の日時）を ScheduleItem（ローカル時刻）に変換する。
+fn to_display<Tz: TimeZone>(dt: NaiveDateTime, source: CrmTimeZone, tz: &Tz) -> NaiveDateTime {
+    match source {
+        CrmTimeZone::Local => dt,
+        CrmTimeZone::Utc => Utc.from_utc_datetime(&dt).with_timezone(tz).naive_local(),
+    }
+}
+
+/// `query` の1レコード（日時は `source` のタイムゾーン）を ScheduleItem（`tz` の時刻）に変換する。
 /// 必須項目（id, date_start）がないか壊れている場合は None。
-pub fn parse_record<Tz: TimeZone>(rec: &Value, tz: &Tz) -> Option<ScheduleItem> {
+pub fn parse_record<Tz: TimeZone>(rec: &Value, source: CrmTimeZone, tz: &Tz) -> Option<ScheduleItem> {
     let id = str_field(rec, "id");
     let record_id: u64 = id.rsplit_once('x')?.1.parse().ok()?;
 
     let start_date = NaiveDate::parse_from_str(str_field(rec, "date_start"), "%Y-%m-%d").ok()?;
     let start_time = parse_time(str_field(rec, "time_start")).unwrap_or(NaiveTime::MIN);
-    let start_utc = start_date.and_time(start_time);
+    let start_raw = start_date.and_time(start_time);
 
     let end_date = NaiveDate::parse_from_str(str_field(rec, "due_date"), "%Y-%m-%d").unwrap_or(start_date);
-    let end_utc = match parse_time(str_field(rec, "time_end")) {
+    let end_raw = match parse_time(str_field(rec, "time_end")) {
         Some(t) => end_date.and_time(t),
-        None => start_utc + Duration::minutes(DEFAULT_DURATION_MINUTES),
+        None => start_raw + Duration::minutes(DEFAULT_DURATION_MINUTES),
     };
 
-    let start = to_local(start_utc, tz);
-    let end = to_local(end_utc, tz).max(start);
+    let start = to_display(start_raw, source, tz);
+    let end = to_display(end_raw, source, tz).max(start);
     let all_day = start.time() == NaiveTime::MIN && end.time() == NaiveTime::MIN;
 
     let location = decode_html(str_field(rec, "location"));
@@ -181,11 +197,17 @@ impl Filter {
 }
 
 /// レコード一覧から「今日の表示対象」を作る（変換 → 今日にかかるもの → 絞り込み → 並べ替え）
-pub fn build_today<Tz: TimeZone>(records: &[Value], tz: &Tz, today: NaiveDate, filter: &Filter) -> Vec<ScheduleItem> {
+pub fn build_today<Tz: TimeZone>(
+    records: &[Value],
+    source: CrmTimeZone,
+    tz: &Tz,
+    today: NaiveDate,
+    filter: &Filter,
+) -> Vec<ScheduleItem> {
     let mut seen = HashSet::new();
     let mut items: Vec<ScheduleItem> = records
         .iter()
-        .filter_map(|r| parse_record(r, tz))
+        .filter_map(|r| parse_record(r, source, tz))
         .filter(|i| overlaps_day(i, today) && filter.passes(i))
         // ページングの境目で同じレコードが重複して返る場合に備える
         .filter(|i| seen.insert(i.id.clone()))

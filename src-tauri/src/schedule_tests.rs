@@ -110,7 +110,7 @@ fn pr01_invalid_id_returns_none() {
     for (case, val) in [("a", json!(null)), ("b", json!("")), ("c", json!("1234")), ("d", json!("18xabc")), ("e", json!("18x")), ("f", json!(1234))] {
         let mut r = std_rec();
         r["id"] = val;
-        assert!(parse_record(&r, &jst()).is_none(), "PR-01{case}");
+        assert!(parse_record(&r, CrmTimeZone::Utc, &jst()).is_none(), "PR-01{case}");
     }
 }
 #[test]
@@ -118,12 +118,12 @@ fn pr02_invalid_date_start_returns_none() {
     for (case, val) in [("a", json!(null)), ("b", json!("")), ("c", json!("2026/10/27")), ("d", json!("2026-13-01")), ("e", json!("2026-02-30"))] {
         let mut r = std_rec();
         r["date_start"] = val;
-        assert!(parse_record(&r, &jst()).is_none(), "PR-02{case}");
+        assert!(parse_record(&r, CrmTimeZone::Utc, &jst()).is_none(), "PR-02{case}");
     }
 }
 #[test]
 fn pr03_valid_record_converted_to_local() {
-    let i = parse_record(&std_rec(), &jst()).unwrap();
+    let i = parse_record(&std_rec(), CrmTimeZone::Utc, &jst()).unwrap();
     assert_eq!(i.start, dt("2026-10-27 09:00"));
     assert_eq!(i.end, dt("2026-10-27 10:00"));
     assert!(!i.all_day);
@@ -135,21 +135,21 @@ fn pr03_valid_record_converted_to_local() {
 }
 #[test]
 fn pr04_time_in_hh_mm() {
-    let i = parse_record(&rec("18x1", "2026-10-27", "01:30", "2026-10-27", "02:00"), &jst()).unwrap();
+    let i = parse_record(&rec("18x1", "2026-10-27", "01:30", "2026-10-27", "02:00"), CrmTimeZone::Utc, &jst()).unwrap();
     assert_eq!(i.start, dt("2026-10-27 10:30"));
     assert_eq!(i.end, dt("2026-10-27 11:00"));
 }
 #[test]
 fn pr05_empty_or_invalid_time_start_is_utc_midnight() {
     for ts in ["", "25:00:00"] {
-        let i = parse_record(&rec("18x1", "2026-10-27", ts, "2026-10-27", "01:00:00"), &jst()).unwrap();
+        let i = parse_record(&rec("18x1", "2026-10-27", ts, "2026-10-27", "01:00:00"), CrmTimeZone::Utc, &jst()).unwrap();
         assert_eq!(i.start, dt("2026-10-27 09:00"), "{ts:?}");
     }
 }
 #[test]
 fn pr06_invalid_due_date_uses_start_date() {
     for de in ["", "xx"] {
-        let i = parse_record(&rec("18x1", "2026-10-27", "01:00:00", de, "02:00:00"), &jst()).unwrap();
+        let i = parse_record(&rec("18x1", "2026-10-27", "01:00:00", de, "02:00:00"), CrmTimeZone::Utc, &jst()).unwrap();
         assert_eq!(i.end, dt("2026-10-27 11:00"), "{de:?}");
     }
 }
@@ -158,39 +158,39 @@ fn pr07_invalid_time_end_is_start_plus_30_minutes() {
     for te in [json!(""), json!(null), json!("99:99")] {
         let mut r = rec("18x1", "2026-10-27", "01:00:00", "2026-10-28", "");
         r["time_end"] = te.clone();
-        let i = parse_record(&r, &jst()).unwrap();
+        let i = parse_record(&r, CrmTimeZone::Utc, &jst()).unwrap();
         // due_date が別の日でも、終了時刻がなければ開始 + 30分
         assert_eq!(i.end, dt("2026-10-27 10:30"), "{te}");
     }
 }
 #[test]
 fn pr08_end_before_start_is_clamped() {
-    let i = parse_record(&rec("18x1", "2026-10-27", "02:00:00", "2026-10-27", "01:00:00"), &jst()).unwrap();
+    let i = parse_record(&rec("18x1", "2026-10-27", "02:00:00", "2026-10-27", "01:00:00"), CrmTimeZone::Utc, &jst()).unwrap();
     assert_eq!(i.start, dt("2026-10-27 11:00"));
     assert_eq!(i.end, dt("2026-10-27 11:00"));
 }
 #[test]
 fn pr09_local_midnight_both_is_all_day() {
     // JST 10/27 00:00 - 10/28 00:00 = UTC 10/26 15:00 - 10/27 15:00
-    let i = parse_record(&rec("18x1", "2026-10-26", "15:00:00", "2026-10-27", "15:00:00"), &jst()).unwrap();
+    let i = parse_record(&rec("18x1", "2026-10-26", "15:00:00", "2026-10-27", "15:00:00"), CrmTimeZone::Utc, &jst()).unwrap();
     assert!(i.all_day);
     assert_eq!(i.start, dt("2026-10-27 00:00"));
     assert_eq!(i.end, dt("2026-10-28 00:00"));
 }
 #[test]
 fn pr10_utc_midnight_is_not_all_day() {
-    let i = parse_record(&rec("18x1", "2026-10-27", "00:00:00", "2026-10-28", "00:00:00"), &jst()).unwrap();
+    let i = parse_record(&rec("18x1", "2026-10-27", "00:00:00", "2026-10-28", "00:00:00"), CrmTimeZone::Utc, &jst()).unwrap();
     assert!(!i.all_day);
 }
 #[test]
 fn pr11_only_start_at_local_midnight_is_not_all_day() {
-    let i = parse_record(&rec("18x1", "2026-10-26", "15:00:00", "2026-10-26", "16:00:00"), &jst()).unwrap();
+    let i = parse_record(&rec("18x1", "2026-10-26", "15:00:00", "2026-10-26", "16:00:00"), CrmTimeZone::Utc, &jst()).unwrap();
     assert_eq!(i.start, dt("2026-10-27 00:00"));
     assert!(!i.all_day);
 }
 #[test]
 fn pr12_early_morning_is_previous_utc_day() {
-    let i = parse_record(&rec("18x1", "2026-10-26", "23:00:00", "2026-10-26", "23:30:00"), &jst()).unwrap();
+    let i = parse_record(&rec("18x1", "2026-10-26", "23:00:00", "2026-10-26", "23:30:00"), CrmTimeZone::Utc, &jst()).unwrap();
     assert_eq!(i.start, dt("2026-10-27 08:00"));
     assert_eq!(i.end, dt("2026-10-27 08:30"));
 }
@@ -201,7 +201,7 @@ fn pr13_html_entities_are_decoded() {
     r["location"] = json!("会議室&amp;B");
     r["activitytype"] = json!("&quot;Call&quot;");
     r["eventstatus"] = json!("Not&nbsp;Held");
-    let i = parse_record(&r, &jst()).unwrap();
+    let i = parse_record(&r, CrmTimeZone::Utc, &jst()).unwrap();
     assert_eq!(i.subject, "A&B <定例>");
     assert_eq!(i.location.as_deref(), Some("会議室&B"));
     assert_eq!(i.activity_type, "\"Call\"");
@@ -209,32 +209,49 @@ fn pr13_html_entities_are_decoded() {
 }
 #[test]
 fn pr14_empty_location_is_none() {
-    assert_eq!(parse_record(&std_rec(), &jst()).unwrap().location, None);
+    assert_eq!(parse_record(&std_rec(), CrmTimeZone::Utc, &jst()).unwrap().location, None);
     let mut r = std_rec();
     r["location"] = json!("   ");
-    assert_eq!(parse_record(&r, &jst()).unwrap().location, None);
+    assert_eq!(parse_record(&r, CrmTimeZone::Utc, &jst()).unwrap().location, None);
 }
 #[test]
 fn pr15_non_string_fields_are_empty() {
     let mut r = std_rec();
     r["subject"] = json!(123);
     r["activitytype"] = json!(null);
-    let i = parse_record(&r, &jst()).unwrap();
+    let i = parse_record(&r, CrmTimeZone::Utc, &jst()).unwrap();
     assert_eq!(i.subject, "");
     assert_eq!(i.activity_type, "");
 }
 #[test]
 fn pr16_surrounding_spaces_are_trimmed() {
-    let i = parse_record(&rec(" 18x1 ", " 2026-10-27 ", " 00:00:00 ", " 2026-10-27 ", " 01:00:00 "), &jst()).unwrap();
+    let i = parse_record(&rec(" 18x1 ", " 2026-10-27 ", " 00:00:00 ", " 2026-10-27 ", " 01:00:00 "), CrmTimeZone::Utc, &jst()).unwrap();
     assert_eq!(i.id, "18x1");
     assert_eq!(i.start, dt("2026-10-27 09:00"));
     assert_eq!(i.end, dt("2026-10-27 10:00"));
 }
 #[test]
 fn pr17_record_id_is_number_after_x() {
-    let i = parse_record(&std_rec(), &jst()).unwrap();
+    let i = parse_record(&std_rec(), CrmTimeZone::Utc, &jst()).unwrap();
     assert_eq!(i.id, "18x1234");
     assert_eq!(i.record_id, 1234);
+}
+
+#[test]
+fn pr18_local_time_zone_is_not_converted() {
+    // F-RevoCRM の既定（Asia/Tokyo で保存）: query の値をそのまま使う
+    let i = parse_record(&std_rec(), CrmTimeZone::Local, &jst()).unwrap();
+    assert_eq!(i.start, dt("2026-10-27 00:00"));
+    assert_eq!(i.end, dt("2026-10-27 01:00"));
+    assert!(!i.all_day);
+}
+#[test]
+fn pr19_local_all_day_and_defaults() {
+    let i = parse_record(&rec("18x1", "2026-10-27", "00:00:00", "2026-10-28", "00:00:00"), CrmTimeZone::Local, &jst()).unwrap();
+    assert!(i.all_day);
+    let j = parse_record(&rec("18x2", "2026-10-27", "15:00:00", "2026-10-27", ""), CrmTimeZone::Local, &jst()).unwrap();
+    assert_eq!((j.start, j.end), (dt("2026-10-27 15:00"), dt("2026-10-27 15:30")));
+    assert!(!j.all_day);
 }
 
 // ===== 2.4 decode_html =====
@@ -432,12 +449,29 @@ fn bt01_mixed_records() {
         rec("18x1", "2026-10-27", "00:00:00", "2026-10-27", "01:00:00"), // 重複
         json!({"id": "broken"}),
     ];
-    let items = build_today(&records, &jst(), d("2026-10-27"), &all());
+    let items = build_today(&records, CrmTimeZone::Utc, &jst(), d("2026-10-27"), &all());
     assert_eq!(ids(&items), vec!["18x2", "18x1", "18x3"]);
 }
 #[test]
+fn bt05_local_time_zone_reported_case() {
+    // 不具合の再現: CRM の 10/26 15:00-17:30 が、UTC とみなすと 10/27 00:00-02:30 に化けていた
+    let records = vec![
+        rec("18x1", "2026-10-26", "15:00:00", "2026-10-26", "17:30:00"),
+        rec("18x2", "2026-10-27", "11:00:00", "2026-10-27", "12:00:00"),
+        rec("18x3", "2026-10-27", "18:00:00", "2026-10-27", "18:30:00"),
+    ];
+    let items = build_today(&records, CrmTimeZone::Local, &jst(), d("2026-10-27"), &all());
+    assert_eq!(ids(&items), vec!["18x2", "18x3"]);
+    assert_eq!((items[0].start, items[0].end), (dt("2026-10-27 11:00"), dt("2026-10-27 12:00")));
+    assert_eq!(items[1].start, dt("2026-10-27 18:00"));
+    // 同じデータを UTC とみなすと9時間ずれる（設定を間違えた場合）
+    let wrong = build_today(&records, CrmTimeZone::Utc, &jst(), d("2026-10-27"), &all());
+    assert_eq!(ids(&wrong), vec!["18x1", "18x2"]);
+    assert_eq!(wrong[0].start, dt("2026-10-27 00:00"));
+}
+#[test]
 fn bt02_empty() {
-    assert!(build_today(&[], &jst(), d("2026-10-27"), &all()).is_empty());
+    assert!(build_today(&[], CrmTimeZone::Utc, &jst(), d("2026-10-27"), &all()).is_empty());
 }
 #[test]
 fn bt03_filter_applied() {
@@ -445,13 +479,13 @@ fn bt03_filter_applied() {
     call["activitytype"] = json!("Call");
     let records = vec![std_rec(), call];
     let f = Filter { activity_types: vec!["Call".into()], show_held: true, show_not_held: true };
-    assert_eq!(ids(&build_today(&records, &jst(), d("2026-10-27"), &f)), vec!["18x2"]);
+    assert_eq!(ids(&build_today(&records, CrmTimeZone::Utc, &jst(), d("2026-10-27"), &f)), vec!["18x2"]);
 }
 #[test]
 fn bt04_duplicates_keep_first() {
     let mut second = std_rec();
     second["subject"] = json!("2件目");
-    let items = build_today(&[std_rec(), second], &jst(), d("2026-10-27"), &all());
+    let items = build_today(&[std_rec(), second], CrmTimeZone::Utc, &jst(), d("2026-10-27"), &all());
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].subject, "件名18x1234");
 }

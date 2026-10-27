@@ -1,6 +1,6 @@
 //! 設定・キャッシュ・資格情報の保存
 
-use crate::schedule::{Filter, ScheduleItem};
+use crate::schedule::{CrmTimeZone, Filter, ScheduleItem};
 use chrono::{DateTime, Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -13,6 +13,8 @@ const KEYRING_SERVICE: &str = "fr-sch-widget";
 pub struct Settings {
     pub crm_url: String,
     pub username: String,
+    /// CRM サーバーが日時を保存しているタイムゾーン
+    pub crm_time_zone: CrmTimeZone,
     pub interval_minutes: u32,
     pub reminder_minutes: Vec<u32>,
     pub soon_minutes: u32,
@@ -36,6 +38,7 @@ impl Default for Settings {
         Self {
             crm_url: String::new(),
             username: String::new(),
+            crm_time_zone: CrmTimeZone::Local,
             interval_minutes: 3,
             reminder_minutes: vec![10],
             soon_minutes: 15,

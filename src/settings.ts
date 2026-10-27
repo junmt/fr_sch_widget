@@ -5,6 +5,7 @@ import { parseMinutesList, parseTypes } from "./settings-logic";
 interface Settings {
   crmUrl: string;
   username: string;
+  crmTimeZone: "local" | "utc";
   intervalMinutes: number;
   reminderMinutes: number[];
   soonMinutes: number;
@@ -47,6 +48,7 @@ function fill(v: SettingsView): void {
   hasAccessKey = v.hasAccessKey;
   input("crmUrl").value = s.crmUrl;
   input("username").value = s.username;
+  (document.getElementById("crmTimeZone") as HTMLSelectElement).value = s.crmTimeZone;
   input("accessKey").value = "";
   input("accessKey").placeholder = hasAccessKey ? "保存済み（変更するときだけ入力）" : "";
   input("intervalMinutes").value = String(s.intervalMinutes);
@@ -90,6 +92,7 @@ function collect(): { settings: Settings } | { error: string } {
     settings: {
       crmUrl,
       username,
+      crmTimeZone: crmTimeZone(),
       intervalMinutes: interval,
       reminderMinutes: reminders,
       soonMinutes: soon,
@@ -107,6 +110,10 @@ function collect(): { settings: Settings } | { error: string } {
   };
 }
 
+function crmTimeZone(): Settings["crmTimeZone"] {
+  return (document.getElementById("crmTimeZone") as HTMLSelectElement).value as Settings["crmTimeZone"];
+}
+
 function accessKeyArg(): string | null {
   const k = input("accessKey").value.trim();
   return k ? k : null;
@@ -121,6 +128,7 @@ async function testConnection(): Promise<void> {
       crmUrl: input("crmUrl").value,
       username: input("username").value,
       accessKey: accessKeyArg(),
+      crmTimeZone: crmTimeZone(),
     });
     setResult("testResult", msg, true);
   } catch (e) {
