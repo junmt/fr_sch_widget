@@ -202,3 +202,18 @@ export function nextParts(items: Item[], now: Date): NextParts | null {
     remaining: `あと${fmtRemaining(minutesUntil(n, now))}`,
   };
 }
+
+/** "YYYY-MM-DD" に n 日足す（マイナスで前の日） */
+export function addDays(date: string, n: number): string {
+  const d = parseLocal(date);
+  const r = new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  return `${r.getFullYear()}-${pad(r.getMonth() + 1)}-${pad(r.getDate())}`;
+}
+
+/** 日めくりで表示している日の呼び方（今日・明日・昨日。それ以外は空） */
+export function dayLabel(date: string, today: string): string {
+  if (date === today) return "今日";
+  if (date === addDays(today, 1)) return "明日";
+  if (date === addDays(today, -1)) return "昨日";
+  return "";
+}

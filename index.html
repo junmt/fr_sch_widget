@@ -10,8 +10,12 @@
     <div id="widget" class="widget">
       <header id="header" class="header" title="ドラッグで移動 / ダブルクリックで折りたたみ">
         <div class="header-row">
+          <button id="prev-day" class="icon-btn nav" type="button" title="前の日" aria-label="前の日">‹</button>
           <span id="date" class="date"></span>
+          <button id="next-day" class="icon-btn nav" type="button" title="次の日" aria-label="次の日">›</button>
           <span id="count" class="count"></span>
+          <button id="today" class="today-btn" type="button" title="今日の予定に戻る" hidden>今日</button>
+          <button id="add" class="icon-btn" type="button" title="予定を登録（CRM の登録画面を開く）" aria-label="予定を登録">＋</button>
           <button id="refresh" class="icon-btn" type="button" title="今すぐ更新" aria-label="今すぐ更新">⟳</button>
         </div>
         <div id="next" class="next"></div>

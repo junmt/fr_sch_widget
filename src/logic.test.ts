@@ -1,6 +1,8 @@
 // テスト仕様書 7章（logic.ts）。テスト名の先頭はテストIDに対応する。
 import { describe, expect, it } from "vitest";
 import {
+  addDays,
+  dayLabel,
   compactText,
   fmtDateHeader,
   fmtRange,
@@ -236,5 +238,36 @@ describe("7.8 nextParts（次の予定の表示）", () => {
   it("NP-03 次の予定がない", () => {
     expect(nextParts(items, at("2026-10-27 18:00"))).toBeNull();
     expect(nextParts([], at("2026-10-27 18:00"))).toBeNull();
+  });
+});
+
+describe("7.9 日めくり addDays / dayLabel", () => {
+  it("DA-01 次の日・前の日", () => {
+    expect(addDays("2026-10-27", 1)).toBe("2026-10-28");
+    expect(addDays("2026-10-27", -1)).toBe("2026-10-26");
+    expect(addDays("2026-10-27", 0)).toBe("2026-10-27");
+  });
+  it("DA-02 月・年・うるう日の境目", () => {
+    expect(addDays("2026-10-31", 1)).toBe("2026-11-01");
+    expect(addDays("2026-12-31", 1)).toBe("2027-01-01");
+    expect(addDays("2026-01-01", -1)).toBe("2025-12-31");
+    expect(addDays("2028-02-28", 1)).toBe("2028-02-29");
+    expect(addDays("2027-02-28", 1)).toBe("2027-03-01");
+  });
+  it("DA-03 何日も先", () => {
+    expect(addDays("2026-10-27", 30)).toBe("2026-11-26");
+  });
+  it.each([
+    ["DL-01", "2026-10-27", "今日"],
+    ["DL-02", "2026-10-28", "明日"],
+    ["DL-03", "2026-10-26", "昨日"],
+    ["DL-04", "2026-10-29", ""],
+    ["DL-04", "2026-10-25", ""],
+  ])("%s %s → %j", (_id, date, expected) => {
+    expect(dayLabel(date, "2026-10-27")).toBe(expected);
+  });
+  it("DL-05 月をまたぐ明日・昨日", () => {
+    expect(dayLabel("2026-11-01", "2026-10-31")).toBe("明日");
+    expect(dayLabel("2026-10-31", "2026-11-01")).toBe("昨日");
   });
 });

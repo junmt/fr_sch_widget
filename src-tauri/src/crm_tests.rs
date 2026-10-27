@@ -844,3 +844,57 @@ fn au15_auth_state_roundtrip_and_partial() {
     assert_eq!(serde_json::from_str::<AuthState>(&text).unwrap(), auth);
     assert_eq!(serde_json::from_str::<AuthState>("{}").unwrap(), AuthState::default());
 }
+
+// ===== 3.11 登録画面の URL・日付の形式 =====
+
+#[test]
+fn ev01_new_event_url_without_date() {
+    assert_eq!(
+        new_event_url("https://crm.example.jp/crm/", None).unwrap(),
+        "https://crm.example.jp/crm/index.php?module=Calendar&view=Edit&mode=Events"
+    );
+}
+#[test]
+fn ev02_new_event_url_with_date() {
+    assert_eq!(
+        new_event_url("https://crm.example.jp/crm", Some("2026-10-28")).unwrap(),
+        "https://crm.example.jp/crm/index.php?module=Calendar&view=Edit&mode=Events&date_start=2026-10-28&due_date=2026-10-28&time_start=09:00&time_end=10:00"
+    );
+}
+#[test]
+fn ev03_new_event_url_without_base() {
+    assert_eq!(new_event_url(" ", None), Err("CRM の URL が設定されていません".into()));
+}
+#[test]
+fn ud_format_user_date() {
+    let date = d("2026-03-04");
+    for (id, fmt, expected) in [
+        ("UD-01", "yyyy-mm-dd", Some("2026-03-04")),
+        ("UD-02", "mm-dd-yyyy", Some("03-04-2026")),
+        ("UD-03", "dd-mm-yyyy", Some("04-03-2026")),
+        ("UD-04", "yyyy/mm/dd", Some("2026/03/04")),
+        ("UD-04", " YYYY.MM.DD ", Some("2026.03.04")),
+        ("UD-05", "", None),
+        ("UD-05", "yy-mm-dd", None),
+        ("UD-05", "yyyy-mm", None),
+        ("UD-05", "yyyy-mm-dd hh", None),
+        ("UD-05", "yyyy-mm-mm-dd", None),
+        ("UD-05", "%Y-%m-%d", None),
+    ] {
+        assert_eq!(format_user_date(date, fmt).as_deref(), expected, "{id} {fmt:?}");
+    }
+}
+#[tokio::test]
+async fn rt01_retrieve_sends_id_and_returns_record() {
+    let mut server = Server::new_async().await;
+    let m = server
+        .mock("GET", "/webservice.php")
+        .match_query(Matcher::AllOf(vec![q("operation", "retrieve"), q("sessionName", "SESS123"), q("id", "19x5")]))
+        .with_body(ok(json!({"id": "19x5", "date_format": "yyyy-mm-dd"})))
+        .expect(1)
+        .create_async()
+        .await;
+    let v = client(&server).retrieve(&session(), "19x5").await.unwrap();
+    assert_eq!(v["date_format"], "yyyy-mm-dd");
+    m.assert_async().await;
+}

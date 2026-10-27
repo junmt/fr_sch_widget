@@ -2,7 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import {
+  addDays,
+  dayLabel,
   fmtDateHeader,
+  fmtHm,
   fmtRange,
   footerText,
   isHeld,
@@ -24,6 +27,22 @@ let view: View | null = null;
 let focusedId: string | null = null;
 let focusTimer: number | undefined;
 let updating = false;
+
+/** 日めくりで表示している日（null なら今日）と、その日の予定 */
+interface DayView {
+  date: string;
+  items: Item[];
+  fetchedAt: string;
+}
+let selectedDay: string | null = null;
+let dayView: DayView | null = null;
+let dayLoading = false;
+let dayError: string | null = null;
+let dayReturnTimer: number | undefined;
+/** 今日以外を表示したまま操作しなければ、今日に戻る */
+const DAY_RETURN_MS = 5 * 60_000;
+/** 今日以外の日の予定を取り直す間隔（今日のポーリングに合わせて） */
+const DAY_REFRESH_MS = 60_000;
 
 const COMPACT_KEY = "compact";
 const SIZE_KEY = "expandedSize";
@@ -73,7 +92,7 @@ function renderNext(target: HTMLElement, v: View, now: Date, prefix: string): vo
   );
 }
 
-function renderItem(item: Item, now: Date, soonMinutes: number, next: Item | undefined): HTMLElement {
+function renderItem(item: Item, now: Date, soonMinutes: number, next: Item | undefined, day: Date): HTMLElement {
   const phase = phaseOf(item, now, soonMinutes);
   const el = document.createElement("div");
   el.className = `item ${phase}`;
@@ -82,9 +101,8 @@ function renderItem(item: Item, now: Date, soonMinutes: number, next: Item | und
   if (item.id === focusedId) el.classList.add("focused");
   el.dataset.id = item.id;
 
-  // 左：開始時刻（大きく）と終了時刻
-  const today = parseLocal(view!.today);
-  const label = timeLabel(item, today);
+  // 左：開始時刻（大きく）と終了時刻（表示している日を基準にする）
+  const label = timeLabel(item, day);
   const when = document.createElement("div");
   when.className = "when";
   if (label.date) when.append(span("when-date", label.date));
@@ -97,7 +115,7 @@ function renderItem(item: Item, now: Date, soonMinutes: number, next: Item | und
   const row = document.createElement("div");
   row.className = "row";
   row.append(span("subject", item.subject || "（件名なし）"));
-  el.title = [fmtRange(item, today), item.subject, item.activityType, item.location].filter(Boolean).join("\n");
+  el.title = [fmtRange(item, day), item.subject, item.activityType, item.location].filter(Boolean).join("\n");
 
   if (phase === "ongoing") row.append(tag("進行中", "ongoing"));
   if (phase === "soon") {
@@ -142,16 +160,30 @@ function render(): void {
   const v = view;
   applyDisplay(v);
 
+  const other = viewingOtherDay();
+  const shownDate = other ? selectedDay! : v.today;
+  const items = other ? (dayView?.items ?? []) : v.items;
+  const label = dayLabel(shownDate, v.today);
+
   $("widget").classList.toggle("compact", compact);
-  $("date").textContent = fmtDateHeader(parseLocal(v.today));
-  $("count").textContent = `今日の予定 ${v.items.length}件`;
-  renderNext($("next"), v, now, "次は");
+  $("date").textContent = fmtDateHeader(parseLocal(shownDate));
+  // 今日以外の日は、2行目に「明日の予定を表示しています」と出すので件数だけにする（ヘッダーの幅が足りないため）
+  $("count").textContent = other ? `${items.length}件` : `今日の予定 ${items.length}件`;
+  $("today").hidden = !other;
+  $("header").classList.toggle("other-day", other);
+  if (other) {
+    const text = dayLoading ? "読み込み中…" : dayError ? `⚠ ${dayError}` : `${label || fmtDateHeader(parseLocal(shownDate))}の予定を表示しています`;
+    $("next").replaceChildren(span("day-label", text));
+  } else {
+    renderNext($("next"), v, now, "次は");
+  }
+  // 折りたたみ表示はいつも今日の次の予定
   renderNext($("compact"), v, now, "次");
-  $("header").classList.toggle("stale", isStale(v.status, now));
-  $("refresh").classList.toggle("spinning", v.status.fetching);
+  $("header").classList.toggle("stale", !other && isStale(v.status, now));
+  $("refresh").classList.toggle("spinning", other ? dayLoading : v.status.fetching);
 
   const status = $("status");
-  status.textContent = footerText(v.status);
+  status.textContent = other ? (dayView ? `取得 ${fmtHm(new Date(dayView.fetchedAt))}` : "") : footerText(v.status);
   const isErr = v.status.state === "error" || v.status.state === "auth_error";
   const needsSettings = v.status.state === "auth_error" || v.status.state === "unconfigured";
   status.classList.toggle("error", isErr && !v.status.fetching);
@@ -168,19 +200,26 @@ function render(): void {
   const list = $("list");
   const scroll = list.scrollTop;
   list.replaceChildren();
-  if (v.items.length === 0) {
+  if (items.length === 0) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.textContent =
-      v.status.state === "unconfigured"
+    empty.textContent = other
+      ? dayLoading
+        ? "読み込み中…"
+        : dayError
+          ? "予定を取得できませんでした"
+          : `${label || "この日"}の予定はありません`
+      : v.status.state === "unconfigured"
         ? "接続設定をすると予定が表示されます"
         : v.status.lastUpdated
           ? "今日の予定はありません"
           : "まだ予定を取得していません";
     list.append(empty);
   } else {
-    const next = nextItem(v.items, now);
-    for (const item of v.items) list.append(renderItem(item, now, v.display.soonMinutes, next));
+    // 「次」の印は今日だけ
+    const next = other ? undefined : nextItem(items, now);
+    const day = parseLocal(shownDate);
+    for (const item of items) list.append(renderItem(item, now, v.display.soonMinutes, next, day));
   }
   list.scrollTop = scroll;
 }
@@ -228,6 +267,45 @@ function focusItem(id: string): void {
   }, 5000);
 }
 
+function viewingOtherDay(): boolean {
+  return !!view && selectedDay !== null && selectedDay !== view.today;
+}
+
+async function loadDay(date: string): Promise<void> {
+  dayLoading = true;
+  dayError = null;
+  render();
+  try {
+    const d = await invoke<DayView>("get_day", { date });
+    if (selectedDay === date) dayView = d;
+  } catch (e) {
+    if (selectedDay === date) dayError = String(e);
+  } finally {
+    dayLoading = false;
+    render();
+  }
+}
+
+/** 表示する日を変える（null か今日なら今日に戻る） */
+function setDay(date: string | null): void {
+  if (!view) return;
+  selectedDay = date === view.today ? null : date;
+  dayView = null;
+  dayError = null;
+  window.clearTimeout(dayReturnTimer);
+  if (selectedDay) {
+    dayReturnTimer = window.setTimeout(() => setDay(null), DAY_RETURN_MS);
+    void loadDay(selectedDay);
+  }
+  $("list").scrollTop = 0;
+  render();
+}
+
+function moveDay(delta: number): void {
+  if (!view) return;
+  setDay(addDays(selectedDay ?? view.today, delta));
+}
+
 async function installUpdate(): Promise<void> {
   const version = view?.updateVersion;
   if (!version || updating) return;
@@ -256,7 +334,17 @@ function setupEvents(): void {
       void win.startDragging();
     }
   });
-  $("refresh").addEventListener("click", () => void invoke("refresh_now"));
+  $("refresh").addEventListener("click", () => {
+    if (viewingOtherDay()) void loadDay(selectedDay!);
+    else void invoke("refresh_now");
+  });
+  $("prev-day").addEventListener("click", () => moveDay(-1));
+  $("next-day").addEventListener("click", () => moveDay(1));
+  $("today").addEventListener("click", () => setDay(null));
+  $("add").addEventListener("click", () => {
+    const date = viewingOtherDay() ? selectedDay : null;
+    void invoke("open_new_event", { date }).catch((e) => window.alert(String(e)));
+  });
   $("settings").addEventListener("click", () => void invoke("open_settings"));
   $("update").addEventListener("click", () => void installUpdate());
   // ブラウザの標準のメニュー（戻る・印刷など）の代わりに、このアプリのメニューを出す
@@ -275,6 +363,10 @@ async function main(): Promise<void> {
   setupEvents();
   await listen<View>("state-changed", (e) => {
     view = e.payload;
+    // 今日以外を表示しているときも、ときどき取り直す（急に入った予定に気づけるように）
+    if (viewingOtherDay() && dayView && !dayLoading && Date.now() - new Date(dayView.fetchedAt).getTime() > DAY_REFRESH_MS) {
+      void loadDay(selectedDay!);
+    }
     render();
   });
   await listen<string>("focus-item", (e) => focusItem(e.payload));

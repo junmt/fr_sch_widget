@@ -101,7 +101,45 @@ body {
 
 .count {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--muted);
+}
+
+/* 日めくり */
+.icon-btn.nav {
+  font-size: 18px;
+  font-weight: 700;
+  padding: 0 4px;
+}
+
+.today-btn {
+  flex: none;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 0 7px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  background: transparent;
+  cursor: pointer;
+}
+
+.today-btn:hover {
+  background: var(--ongoing-bg);
+}
+
+.day-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.header.other-day {
+  background: var(--ongoing-bg);
 }
 
 /* 次の予定（ヘッダー2行目と折りたたみ表示）：時刻を大きく */

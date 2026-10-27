@@ -129,6 +129,33 @@ pub fn record_url(base_url: &str, id: &str) -> Result<String, String> {
     Ok(format!("{base}/index.php?module=Calendar&view=Detail&record={record_id}"))
 }
 
+/// 新しい活動（予定）の登録画面の URL。`date` を渡すと、その日の 9:00〜10:00 を入れた状態で開く。
+/// `date` は CRM のユーザー設定の日付形式に直したもの（`format_user_date`）
+pub fn new_event_url(base_url: &str, date: Option<&str>) -> Result<String, String> {
+    let base = normalize_url(base_url);
+    if base.is_empty() {
+        return Err("CRM の URL が設定されていません".into());
+    }
+    let mut url = format!("{base}/index.php?module=Calendar&view=Edit&mode=Events");
+    if let Some(d) = date {
+        url.push_str(&format!("&date_start={d}&due_date={d}&time_start=09:00&time_end=10:00"));
+    }
+    Ok(url)
+}
+
+/// CRM のユーザー設定の日付形式（`yyyy-mm-dd`、`mm-dd-yyyy`、`dd-mm-yyyy` など）で日付を書く。
+/// 読めない形式なら None（日付を入れずに登録画面を開く）
+pub fn format_user_date(date: NaiveDate, format: &str) -> Option<String> {
+    let f = format.trim().to_ascii_lowercase();
+    let ok_chars = f.chars().all(|c| matches!(c, 'y' | 'm' | 'd' | '-' | '/' | '.'));
+    if !ok_chars || f.matches("yyyy").count() != 1 || f.matches("mm").count() != 1 || f.matches("dd").count() != 1 {
+        return None;
+    }
+    // yyyy・mm・dd が1つずつで、ほかは区切り文字だけなので、置き換えれば形式がそろう
+    let pattern = f.replace("yyyy", "%Y").replace("mm", "%m").replace("dd", "%d");
+    Some(date.format(&pattern).to_string())
+}
+
 pub struct CrmClient {
     http: reqwest::Client,
     endpoint: String,
@@ -260,6 +287,11 @@ impl CrmClient {
             (Some(name), Some(user_id)) if !name.is_empty() && !user_id.is_empty() => Ok(Session { name, user_id }),
             _ => Err(CrmError::BadResponse("login に sessionName / userId がありません".into())),
         }
+    }
+
+    /// レコードを1件取得する（自分のユーザー情報の日付形式を読むのに使う）
+    pub async fn retrieve(&self, session: &Session, id: &str) -> Result<Value, CrmError> {
+        self.get(&[("operation", "retrieve"), ("sessionName", &session.name), ("id", id)]).await
     }
 
     pub async fn logout(&self, session: &Session) {

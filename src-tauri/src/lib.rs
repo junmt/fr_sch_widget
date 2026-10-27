@@ -67,6 +67,8 @@ pub fn run() {
             updater::install_update,
             updater::check_update,
             context_menu::show_context_menu,
+            runtime::get_day,
+            runtime::open_new_event,
         ])
         .setup(|app| {
             let dir = config::data_dir();

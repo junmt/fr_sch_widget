@@ -1,7 +1,7 @@
 //! アプリの状態・ポーリングのループ・画面から呼ぶコマンド
 
 use crate::config::{self, credentials, KeyAction, Settings};
-use crate::crm::{record_url, AuthState, CrmClient, CrmError, Session};
+use crate::crm::{format_user_date, new_event_url, record_url, AuthState, CrmClient, CrmError, Session};
 use crate::engine::{is_resumed, should_fetch, Engine, Notice, SyncState, SyncStatus};
 use crate::schedule::{build_today, query_range, CrmTimeZone, ScheduleItem};
 use crate::{notify, text, tray};
@@ -26,6 +26,8 @@ struct Connection {
     key: String,
     client: Arc<CrmClient>,
     session: Option<Session>,
+    /// CRM のユーザー設定の日付形式（登録画面に日付を渡すときに使う。読めなかったら空）
+    date_format: Option<String>,
 }
 
 pub struct AppState {
@@ -176,7 +178,7 @@ async fn fetch_once(app: &AppHandle) {
     lock(&st.engine).status.fetching = true;
     publish(app);
 
-    let result = fetch_records(&st, &settings, &key).await;
+    let result = fetch_records(&st, &settings, &key, Local::now().date_naive()).await;
     let now = Local::now();
     let mut save = None;
     let mut notices = Vec::new();
@@ -208,14 +210,20 @@ async fn fetch_once(app: &AppHandle) {
 }
 
 /// ログイン（必要なら）して、今日の前後の予定を取得する。セッション切れなら1回だけログインし直す
-async fn fetch_records(st: &AppState, settings: &Settings, access_key: &str) -> Result<Vec<Value>, CrmError> {
+/// `day` の前後の予定を取得する（ポーリングは今日、日めくりはその日）
+async fn fetch_records(st: &AppState, settings: &Settings, access_key: &str, day: NaiveDate) -> Result<Vec<Value>, CrmError> {
     let mut guard = st.conn.lock().await;
     let conn_key = format!("{}|{}", settings.crm_url, settings.username);
     if guard.as_ref().map_or(true, |c| c.key != conn_key) {
-        *guard = Some(Connection { key: conn_key, client: Arc::new(CrmClient::new(&settings.crm_url)?), session: None });
+        *guard = Some(Connection {
+            key: conn_key,
+            client: Arc::new(CrmClient::new(&settings.crm_url)?),
+            session: None,
+            date_format: None,
+        });
     }
     let conn = guard.as_mut().expect("接続は直前に作った");
-    let (from, to) = query_range(Local::now().date_naive());
+    let (from, to) = query_range(day);
     let mut auth = st.auth.lock().await;
     let before = auth.clone();
     let result = conn
@@ -223,6 +231,21 @@ async fn fetch_records(st: &AppState, settings: &Settings, access_key: &str) -> 
         .fetch_with_relogin(&mut conn.session, &mut auth, &settings.username, access_key, from, to)
         .await;
     save_auth_if_changed(&st.data_dir, &before, &auth);
+    drop(auth);
+
+    if result.is_ok() && conn.date_format.is_none() {
+        if let Some(session) = conn.session.clone() {
+            let format = match conn.client.retrieve(&session, &session.user_id).await {
+                Ok(user) => user.get("date_format").and_then(Value::as_str).unwrap_or("").to_string(),
+                Err(e) => {
+                    log::warn!("ユーザーの日付形式を読めませんでした: {e}");
+                    String::new()
+                }
+            };
+            log::info!("ユーザーの日付形式: {format:?}");
+            conn.date_format = Some(format);
+        }
+    }
     result
 }
 
@@ -348,6 +371,43 @@ pub fn refresh_now(app: AppHandle) {
 pub fn open_record(app: AppHandle, id: String) -> Result<(), String> {
     let base = lock(&app.state::<AppState>().settings).crm_url.clone();
     let url = record_url(&base, &id)?;
+    app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DayView {
+    date: NaiveDate,
+    items: Vec<ScheduleItem>,
+    fetched_at: DateTime<Local>,
+}
+
+/// 日めくり：指定した日の予定を取得する（通知・バッジ・キャッシュの対象にはしない）
+#[tauri::command]
+pub async fn get_day(state: tauri::State<'_, AppState>, date: NaiveDate) -> Result<DayView, String> {
+    let settings = lock(&state.settings).clone();
+    let key = credentials::load(&settings.username)
+        .filter(|_| settings.is_connection_configured())
+        .ok_or("接続設定をしてください")?;
+    let records = fetch_records(&state, &settings, &key, date).await.map_err(|e| e.to_string())?;
+    let items = build_today(&records, settings.crm_time_zone, &Local, date, &settings.filter());
+    Ok(DayView { date, items, fetched_at: Local::now() })
+}
+
+/// 活動の登録画面をブラウザで開く。今日以外の日を渡すと、その日の日付を入れて開く
+#[tauri::command]
+pub async fn open_new_event(app: AppHandle, date: Option<NaiveDate>) -> Result<(), String> {
+    let st = app.state::<AppState>();
+    let base = lock(&st.settings).crm_url.clone();
+    let today = Local::now().date_naive();
+    let date_text = match date.filter(|d| *d != today) {
+        Some(d) => {
+            let format = st.conn.lock().await.as_ref().and_then(|c| c.date_format.clone());
+            format.and_then(|f| format_user_date(d, &f))
+        }
+        None => None,
+    };
+    let url = new_event_url(&base, date_text.as_deref())?;
     app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
 }
 
