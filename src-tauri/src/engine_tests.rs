@@ -150,7 +150,7 @@ fn ir_is_resumed() {
 fn en01_today_cache() {
     let mut cached = a();
     cached.badge = Some(Badge::New);
-    let cache = Cache { date: day("2026-10-27"), last_updated: local("2026-10-27 08:00"), items: vec![cached] };
+    let cache = Cache { source: String::new(), date: day("2026-10-27"), last_updated: local("2026-10-27 08:00"), items: vec![cached] };
     let e = Engine::new(day("2026-10-27"), Some(cache));
     assert_eq!(e.items().len(), 1);
     assert_eq!(e.items()[0].badge, None);
@@ -160,7 +160,7 @@ fn en01_today_cache() {
 }
 #[test]
 fn en02_other_day_cache() {
-    let cache = Cache { date: day("2026-10-26"), last_updated: local("2026-10-26 08:00"), items: vec![a()] };
+    let cache = Cache { source: String::new(), date: day("2026-10-26"), last_updated: local("2026-10-26 08:00"), items: vec![a()] };
     let e = Engine::new(day("2026-10-27"), Some(cache));
     assert!(e.items().is_empty());
     assert_eq!(e.status.last_updated, None);
@@ -446,13 +446,14 @@ fn db03_dismissed_badge_does_not_return() {
 }
 #[test]
 fn cc01_no_cache_before_success() {
-    assert!(Engine::new(day("2026-10-27"), None).cache().is_none());
+    assert!(Engine::new(day("2026-10-27"), None).cache("S").is_none());
 }
 #[test]
 fn cc02_cache_after_success() {
     let mut e = engine_with(Baseline::Full);
     next_fetch(&mut e, &Settings::default());
-    let c = e.cache().unwrap();
+    let c = e.cache("S").unwrap();
+    assert_eq!(c.source, "S");
     assert_eq!(c.date, day("2026-10-27"));
     assert_eq!(c.last_updated, local("2026-10-27 09:03"));
     assert_eq!(c.items.len(), 2);

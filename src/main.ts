@@ -150,7 +150,12 @@ function render(): void {
   if (v.items.length === 0) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.textContent = v.status.state === "unconfigured" ? "接続設定をすると予定が表示されます" : "今日の予定はありません";
+    empty.textContent =
+      v.status.state === "unconfigured"
+        ? "接続設定をすると予定が表示されます"
+        : v.status.lastUpdated
+          ? "今日の予定はありません"
+          : "まだ予定を取得していません";
     list.append(empty);
   } else {
     const next = nextItem(v.items, now);

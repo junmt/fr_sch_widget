@@ -88,6 +88,12 @@ impl Settings {
         !self.crm_url.is_empty() && !self.username.is_empty()
     }
 
+    /// キャッシュを作った条件。これが変わったら、前のキャッシュは使わない
+    /// （例：タイムゾーンの扱いを直す前の版が保存した、9時間ずれた予定を表示しないため）
+    pub fn cache_source(&self) -> String {
+        format!("v{CACHE_FORMAT}|{}|{}|{:?}", self.crm_url, self.username, self.crm_time_zone)
+    }
+
     pub fn filter(&self) -> Filter {
         Filter {
             activity_types: self.activity_types.clone(),
@@ -177,17 +183,23 @@ pub fn save_settings(dir: &Path, settings: &Settings) -> std::io::Result<()> {
     write_json(&dir.join("config.json"), settings)
 }
 
-/// 前回取得した予定（その日の分だけ使う）
+/// キャッシュの形式のバージョン。予定の変換のしかたを変えたら上げる
+pub const CACHE_FORMAT: u32 = 2;
+
+/// 前回取得した予定（その日の分で、同じ条件で作ったものだけ使う）
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Cache {
+    /// 作った条件（`Settings::cache_source`）。古い版のキャッシュにはないので空になる
+    #[serde(default)]
+    pub source: String,
     pub date: NaiveDate,
     pub last_updated: DateTime<Local>,
     pub items: Vec<ScheduleItem>,
 }
 
-pub fn load_cache(dir: &Path, today: NaiveDate) -> Option<Cache> {
-    read_json::<Cache>(&dir.join("cache.json")).filter(|c| c.date == today)
+pub fn load_cache(dir: &Path, today: NaiveDate, source: &str) -> Option<Cache> {
+    read_json::<Cache>(&dir.join("cache.json")).filter(|c| c.date == today && c.source == source)
 }
 
 pub fn save_cache(dir: &Path, cache: &Cache) -> std::io::Result<()> {

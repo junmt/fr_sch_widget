@@ -243,6 +243,8 @@ fn today() -> NaiveDate {
     NaiveDate::from_ymd_opt(2026, 10, 27).unwrap()
 }
 
+const SRC: &str = "v2|https://x|u|Local";
+
 fn sample_cache() -> Cache {
     let item = ScheduleItem {
         id: "18x1".into(),
@@ -257,27 +259,27 @@ fn sample_cache() -> Cache {
         modified_time: String::new(),
         badge: None,
     };
-    Cache { date: today(), last_updated: Local::now(), items: vec![item] }
+    Cache { source: SRC.into(), date: today(), last_updated: Local::now(), items: vec![item] }
 }
 
 #[test]
 fn ca01_no_cache() {
-    assert!(load_cache(&temp_dir("ca01"), today()).is_none());
+    assert!(load_cache(&temp_dir("ca01"), today(), SRC).is_none());
 }
 #[test]
 fn ca02_same_day() {
     let dir = temp_dir("ca02");
     let c = sample_cache();
     save_cache(&dir, &c).unwrap();
-    assert_eq!(load_cache(&dir, today()), Some(c));
+    assert_eq!(load_cache(&dir, today(), SRC), Some(c));
     let _ = std::fs::remove_dir_all(&dir);
 }
 #[test]
 fn ca03_other_day() {
     let dir = temp_dir("ca03");
     save_cache(&dir, &sample_cache()).unwrap();
-    assert!(load_cache(&dir, today().succ_opt().unwrap()).is_none());
-    assert!(load_cache(&dir, today().pred_opt().unwrap()).is_none());
+    assert!(load_cache(&dir, today().succ_opt().unwrap(), SRC).is_none());
+    assert!(load_cache(&dir, today().pred_opt().unwrap(), SRC).is_none());
     let _ = std::fs::remove_dir_all(&dir);
 }
 #[test]
@@ -285,8 +287,37 @@ fn ca04_broken_cache() {
     let dir = temp_dir("ca04");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("cache.json"), r#"{"date":"2026-10-27"}"#).unwrap();
-    assert!(load_cache(&dir, today()).is_none());
+    assert!(load_cache(&dir, today(), SRC).is_none());
     let _ = std::fs::remove_dir_all(&dir);
+}
+#[test]
+fn ca05_cache_from_other_conditions_is_ignored() {
+    let dir = temp_dir("ca05");
+    save_cache(&dir, &sample_cache()).unwrap();
+    for other in ["v2|https://x|u|Utc", "v2|https://y|u|Local", "v2|https://x|other|Local", "v1|https://x|u|Local", ""] {
+        assert!(load_cache(&dir, today(), other).is_none(), "{other:?}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+#[test]
+fn ca06_old_cache_without_source_is_ignored() {
+    // v0.1.3 より前の版が保存したキャッシュ（source がない）
+    let dir = temp_dir("ca06");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("cache.json"),
+        r#"{"date":"2026-10-27","lastUpdated":"2026-10-27T16:27:48+09:00","items":[]}"#,
+    )
+    .unwrap();
+    assert!(load_cache(&dir, today(), SRC).is_none());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+#[test]
+fn cs01_cache_source_reflects_conditions() {
+    let s = Settings { crm_url: "https://x".into(), username: "u".into(), ..Default::default() };
+    assert_eq!(s.cache_source(), format!("v{CACHE_FORMAT}|https://x|u|Local"));
+    let utc = Settings { crm_time_zone: CrmTimeZone::Utc, ..s.clone() };
+    assert_ne!(utc.cache_source(), s.cache_source());
 }
 #[test]
 fn fi01_filter_from_settings() {

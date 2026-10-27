@@ -70,7 +70,7 @@ pub fn run() {
             let dir = config::data_dir();
             let settings = config::load_settings(&dir);
             let today = Local::now().date_naive();
-            let engine = engine::Engine::new(today, config::load_cache(&dir, today));
+            let engine = engine::Engine::new(today, config::load_cache(&dir, today, &settings.cache_source()));
             let configured = settings.is_connection_configured();
             let (always_on_top, autostart) = (settings.always_on_top, settings.autostart);
             app.manage(AppState::new(dir, settings, engine));

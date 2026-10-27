@@ -220,13 +220,13 @@ impl Engine {
         true
     }
 
-    pub fn cache(&self) -> Option<Cache> {
+    pub fn cache(&self, source: &str) -> Option<Cache> {
         let last_updated = self.status.last_updated?;
         let mut items = self.items.clone();
         for i in &mut items {
             i.badge = None;
         }
-        Some(Cache { date: self.day, last_updated, items })
+        Some(Cache { source: source.to_string(), date: self.day, last_updated, items })
     }
 }
 

@@ -189,7 +189,7 @@ async fn fetch_once(app: &AppHandle) {
                 let items = build_today(&records, settings.crm_time_zone, &Local, today, &settings.filter());
                 log::info!("取得しました: {}件（今日の表示 {}件）", records.len(), items.len());
                 notices = e.on_success(items, now, &settings);
-                save = e.cache();
+                save = e.cache(&settings.cache_source());
             }
             Err(err) => {
                 log::warn!("取得に失敗しました: {err:?}");
