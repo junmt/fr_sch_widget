@@ -21,7 +21,7 @@ jobs:
             Write-Error "タグ ${{ github.ref_name }} と tauri.conf.json の version ($version) が違います"
             exit 1
           }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -48,6 +48,6 @@ jobs:
             Windows 用のインストーラー（`*_x64-setup.exe`）をダウンロードして実行してください。
             使い方は README を参照してください。
           # 自動アップデートが読む latest.json もリリースに上げる
-          includeUpdaterJson: true
+          uploadUpdaterJson: true
           releaseDraft: false
           prerelease: false
