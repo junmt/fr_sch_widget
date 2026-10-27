@@ -9,10 +9,12 @@ use tauri::{App, AppHandle, Manager, Wry};
 
 const ICON: &[u8] = include_bytes!("../icons/tray.png");
 const ICON_WARN: &[u8] = include_bytes!("../icons/tray-warn.png");
+const NO_UPDATE_LABEL: &str = "新しいバージョンはありません";
 
 pub struct Tray {
     icon: TrayIcon,
     always_on_top: CheckMenuItem<Wry>,
+    install_update: MenuItem<Wry>,
     /// 同じ内容で何度も更新しないよう、最後に設定した値を覚えておく
     last: Mutex<(String, bool)>,
 }
@@ -22,10 +24,15 @@ pub fn create(app: &App, always_on_top: bool) -> tauri::Result<()> {
     let toggle = MenuItem::with_id(app, "toggle", "ウィジェットを表示 / 隠す", true, None::<&str>)?;
     let on_top = CheckMenuItem::with_id(app, "on_top", "常に最前面に表示", true, always_on_top, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "設定...", true, None::<&str>)?;
+    let check_update = MenuItem::with_id(app, "check_update", "アップデートを確認", true, None::<&str>)?;
+    let install_update = MenuItem::with_id(app, "install_update", NO_UPDATE_LABEL, false, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "終了", true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&refresh, &toggle, &on_top, &sep1, &settings, &sep2, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[&refresh, &toggle, &on_top, &sep1, &settings, &check_update, &install_update, &sep2, &quit],
+    )?;
 
     let icon = TrayIconBuilder::with_id("main")
         .icon(Image::from_bytes(ICON)?)
@@ -37,6 +44,18 @@ pub fn create(app: &App, always_on_top: bool) -> tauri::Result<()> {
             "toggle" => runtime::toggle_main(app),
             "on_top" => runtime::toggle_always_on_top(app),
             "settings" => runtime::open_settings_window(app),
+            "check_update" => {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move { crate::updater::check(&app, true).await });
+            }
+            "install_update" => {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = crate::updater::install(&app).await {
+                        crate::notify::show(&app, "更新できませんでした", &e, None);
+                    }
+                });
+            }
             "quit" => {
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move {
@@ -53,7 +72,7 @@ pub fn create(app: &App, always_on_top: bool) -> tauri::Result<()> {
         })
         .build(app)?;
 
-    app.manage(Tray { icon, always_on_top: on_top, last: Mutex::new((String::new(), false)) });
+    app.manage(Tray { icon, always_on_top: on_top, install_update, last: Mutex::new((String::new(), false)) });
     Ok(())
 }
 
@@ -75,5 +94,14 @@ pub fn update(app: &AppHandle, tooltip: &str, warn: bool) {
 pub fn set_always_on_top_checked(app: &AppHandle, on: bool) {
     if let Some(tray) = app.try_state::<Tray>() {
         let _ = tray.always_on_top.set_checked(on);
+    }
+}
+
+/// 新しいバージョンがあれば「v◯ に更新して再起動」を押せるようにする
+pub fn set_update(app: &AppHandle, version: Option<&str>) {
+    if let Some(tray) = app.try_state::<Tray>() {
+        let label = version.map_or(NO_UPDATE_LABEL.to_string(), |v| format!("v{v} に更新して再起動"));
+        let _ = tray.install_update.set_text(label);
+        let _ = tray.install_update.set_enabled(version.is_some());
     }
 }

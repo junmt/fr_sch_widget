@@ -31,6 +31,8 @@ export interface View {
   /** "YYYY-MM-DD" */
   today: string;
   display: { soonMinutes: number; opacity: number; theme: "system" | "light" | "dark" };
+  /** 新しいバージョンがあれば、その版の番号 */
+  updateVersion: string | null;
 }
 
 /** 予定の状態（仕様 F-01） */

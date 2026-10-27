@@ -1,0 +1,24 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+    groups:
+      cargo:
+        patterns: ["*"]
+    ignore:
+      # glib は Tauri の Linux 版（GTK）だけが使うライブラリで、Windows 向けのビルドには含まれない。
+      # Tauri 2 が gtk-rs 0.18 系を前提にしているため、0.20 以上には上げられない（Tauri 側の対応待ち）。
+      - dependency-name: glib
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      npm:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

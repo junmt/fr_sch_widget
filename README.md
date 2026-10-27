@@ -24,6 +24,7 @@ F-RevoCRM から自分の今日の予定（活動）を取得して、デスク�
 | `window_pos.rs` | ウィジェットを置く位置の計算 |
 | `runtime.rs` | アプリの状態・ポーリングのループ・画面から呼ぶコマンド |
 | `tray.rs` / `notify.rs` | タスクトレイ / Windows のトースト通知 |
+| `updater.rs` | 自動アップデート（新しいバージョンの確認とインストール） |
 
 ## 開発環境
 
@@ -49,7 +50,7 @@ cd C:\dev\fr_sch_widget
 npm install
 cd src-tauri; cargo test --lib; cd ..   # Rust のテスト
 npm run tauri dev                       # 開発用に起動
-npm run tauri build                     # インストーラーを作る（src-tauri\target\release\bundle\nsis）
+npm run tauri build -- --config src-tauri/tauri.ci.conf.json   # インストーラーを作る（署名なし。src-tauri\target\release\bundle\nsis）
 ```
 
 ## 使い方
@@ -89,3 +90,10 @@ git push origin main v0.2.0
 ```
 
 タグと `tauri.conf.json` のバージョンが違うと、リリースのワークフローは止まる。
+
+### 自動アップデート
+
+- アプリは起動時と6時間おきに `https://github.com/junmt/fr_sch_widget/releases/latest/download/latest.json` を見て、新しいバージョンがあれば通知する。ウィジェットのフッターの「⬆ 更新」か、トレイの「v◯ に更新して再起動」で更新できる。
+- 更新ファイルは署名して配る。秘密鍵とパスワードは GitHub のシークレット（`TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）に登録してあり、公開鍵は `tauri.conf.json` の `plugins.updater.pubkey` にある。
+- **秘密鍵をなくすと、配ったアプリに更新を届けられなくなる。** 鍵を作った PC の `~/.tauri/fr-sch-widget.key`（とパスワードの `.password`）を安全な場所に控えておくこと。
+- 手元でインストーラーを作るときは、署名なしでビルドする（`npm run tauri build -- --config src-tauri/tauri.ci.conf.json`）。署名付きで作るときは、上の2つを環境変数に入れてから `npm run tauri build` する。

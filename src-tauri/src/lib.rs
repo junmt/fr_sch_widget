@@ -6,6 +6,7 @@ mod runtime;
 mod schedule;
 mod text;
 mod tray;
+mod updater;
 mod window_pos;
 
 use chrono::Local;
@@ -52,6 +53,7 @@ pub fn run() {
         )
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             runtime::get_state,
             runtime::refresh_now,
@@ -61,6 +63,8 @@ pub fn run() {
             runtime::get_settings,
             runtime::save_settings,
             runtime::test_connection,
+            updater::install_update,
+            updater::check_update,
         ])
         .setup(|app| {
             let dir = config::data_dir();
@@ -70,6 +74,7 @@ pub fn run() {
             let configured = settings.is_connection_configured();
             let (always_on_top, autostart) = (settings.always_on_top, settings.autostart);
             app.manage(AppState::new(dir, settings, engine));
+            app.manage(updater::UpdateState::default());
             log::info!("起動しました（v{}）", env!("CARGO_PKG_VERSION"));
 
             tray::create(app, always_on_top)?;
@@ -90,7 +95,8 @@ pub fn run() {
             if !configured {
                 runtime::open_settings_window(&handle);
             }
-            tauri::async_runtime::spawn(runtime::poll_loop(handle));
+            tauri::async_runtime::spawn(runtime::poll_loop(handle.clone()));
+            tauri::async_runtime::spawn(updater::update_loop(handle));
             Ok(())
         })
         .on_window_event(|window, event| {

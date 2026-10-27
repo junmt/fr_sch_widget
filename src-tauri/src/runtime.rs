@@ -31,6 +31,8 @@ struct Connection {
 pub struct AppState {
     pub engine: Mutex<Engine>,
     pub settings: Mutex<Settings>,
+    /// 新しいバージョンがあれば、その版の番号
+    pub update_version: Mutex<Option<String>>,
     data_dir: PathBuf,
     /// 手動更新・設定の保存で、すぐに取得させる
     wake: Notify,
@@ -53,6 +55,7 @@ pub struct StateView {
     status: SyncStatus,
     today: NaiveDate,
     display: DisplayView,
+    update_version: Option<String>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -64,6 +67,7 @@ impl AppState {
         Self {
             engine: Mutex::new(engine),
             settings: Mutex::new(settings),
+            update_version: Mutex::new(None),
             data_dir,
             wake: Notify::new(),
             conn: tokio::sync::Mutex::new(None),
@@ -78,6 +82,7 @@ impl AppState {
             status: e.status.clone(),
             today: e.day,
             display: DisplayView { soon_minutes: s.soon_minutes, opacity: s.opacity, theme: s.theme.clone() },
+            update_version: lock(&self.update_version).clone(),
         }
     }
 }

@@ -42,7 +42,8 @@ jobs:
       - name: cargo test
         working-directory: src-tauri
         run: cargo test --lib
-      - run: npm run tauri build
+      # 更新ファイルの署名はリリースのときだけ行う（シークレットがない PR でもビルドできるように）
+      - run: npm run tauri build -- --config src-tauri/tauri.ci.conf.json
       - uses: actions/upload-artifact@v4
         with:
           name: installer

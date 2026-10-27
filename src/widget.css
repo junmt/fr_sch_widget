@@ -313,6 +313,23 @@ body {
   font-weight: 600;
 }
 
+.update-btn {
+  flex: none;
+  border: none;
+  border-radius: 8px;
+  padding: 1px 7px;
+  font: inherit;
+  font-weight: 700;
+  color: #fff;
+  background: var(--badge-new);
+  cursor: pointer;
+}
+
+.update-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .status.link {
   cursor: pointer;
   text-decoration: underline;

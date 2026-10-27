@@ -23,6 +23,7 @@ const $ = (id: string) => document.getElementById(id) as HTMLElement;
 let view: View | null = null;
 let focusedId: string | null = null;
 let focusTimer: number | undefined;
+let updating = false;
 
 const COMPACT_KEY = "compact";
 const SIZE_KEY = "expandedSize";
@@ -136,6 +137,13 @@ function render(): void {
   status.classList.toggle("link", needsSettings);
   status.title = needsSettings ? "クリックで設定を開く" : (v.status.message ?? "");
 
+  const update = $("update") as HTMLButtonElement;
+  update.hidden = !v.updateVersion;
+  if (v.updateVersion && !updating) {
+    update.textContent = `⬆ v${v.updateVersion} に更新`;
+    update.title = "クリックで更新して再起動";
+  }
+
   const list = $("list");
   const scroll = list.scrollTop;
   list.replaceChildren();
@@ -194,6 +202,24 @@ function focusItem(id: string): void {
   }, 5000);
 }
 
+async function installUpdate(): Promise<void> {
+  const version = view?.updateVersion;
+  if (!version || updating) return;
+  if (!window.confirm(`v${version} に更新します。\nウィジェットはいったん終了し、更新が終わると起動し直します。`)) return;
+  const btn = $("update") as HTMLButtonElement;
+  updating = true;
+  btn.disabled = true;
+  btn.textContent = "ダウンロード中…";
+  try {
+    await invoke("install_update");
+  } catch (e) {
+    updating = false;
+    btn.disabled = false;
+    btn.textContent = `⬆ v${version} に更新`;
+    window.alert(String(e));
+  }
+}
+
 function setupEvents(): void {
   // ヘッダー：ドラッグで移動、ダブルクリックで折りたたみ
   $("header").addEventListener("mousedown", (e) => {
@@ -206,6 +232,7 @@ function setupEvents(): void {
   });
   $("refresh").addEventListener("click", () => void invoke("refresh_now"));
   $("settings").addEventListener("click", () => void invoke("open_settings"));
+  $("update").addEventListener("click", () => void installUpdate());
   $("status").addEventListener("click", () => {
     const s = view?.status.state;
     if (s === "auth_error" || s === "unconfigured") void invoke("open_settings");

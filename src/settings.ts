@@ -17,6 +17,7 @@ interface Settings {
   opacity: number;
   theme: "system" | "light" | "dark";
   autostart: boolean;
+  autoUpdateCheck: boolean;
 }
 
 interface SettingsView {
@@ -60,6 +61,7 @@ function fill(v: SettingsView): void {
   input("opacity").value = String(s.opacity);
   (document.getElementById("theme") as HTMLSelectElement).value = s.theme;
   input("autostart").checked = s.autostart;
+  input("autoUpdateCheck").checked = s.autoUpdateCheck;
   updateDerived();
   applyTheme(s.theme);
 }
@@ -100,6 +102,7 @@ function collect(): { settings: Settings } | { error: string } {
       opacity: Number(input("opacity").value),
       theme: (document.getElementById("theme") as HTMLSelectElement).value as Settings["theme"],
       autostart: input("autostart").checked,
+      autoUpdateCheck: input("autoUpdateCheck").checked,
     },
   };
 }

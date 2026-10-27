@@ -1,20 +1,20 @@
 # F-RevoCRM 今日の予定ウィジェット テスト結果報告書
 
 - 実施日: 2026-10-27
-- 対象: テスト仕様書 `docs/test-specification.md` v1.0
+- 対象: テスト仕様書 `docs/test-specification.md` v1.1
 
 ## 1. 結果の概要
 
 | 種類 | 件数 | 成功 | 失敗 | 実行方法 |
 |---|---|---|---|---|
-| ユニットテスト（Rust） | 242 | 242 | 0 | Windows 上で `cargo test --lib` |
+| ユニットテスト（Rust） | 248 | 248 | 0 | Windows 上で `cargo test --lib` |
 | ユニットテスト（TypeScript） | 61 | 61 | 0 | `npm test`（vitest） |
-| ミューテーション（Rust） | 33 | 33 検出 | 0 見逃し | 3章 |
+| ミューテーション（Rust） | 35 | 35 検出 | 0 見逃し | 3章 |
 | ミューテーション（TypeScript） | 8 | 8 検出 | 0 見逃し | 3章 |
-| 結合テスト（手動） | 25 | - | - | **未実施**（4章） |
+| 結合テスト（手動） | 30 | - | - | **未実施**（4章） |
 
-- テスト仕様書の2〜7章のテストID（324件）は、すべてテストコードの関数名またはテスト名に含まれていることを、スクリプトで確認した。
-- リリースビルド（`npm run tauri build`）が通り、インストーラー（NSIS、約1.7MB）ができることを確認した。ビルド時の警告は0件。
+- テスト仕様書の2〜7章のテストID（330件）は、すべてテストコードの関数名またはテスト名に含まれていることを、スクリプトで確認した。
+- リリースビルド（`npm run tauri build`）が通り、インストーラー（NSIS、約1.7MB）ができることを確認した（自動アップデートの署名なし。署名付きのビルドは GitHub Actions のリリースで行う）。ビルド時の警告は0件。
 
 ## 2. 実行環境
 
@@ -37,6 +37,7 @@
 | text.rs | 6.1〜6.3 | 19 |
 | window_pos.rs | 6.4 | 10 |
 | notify.rs | 6.5 | 5 |
+| updater.rs | 6.6 | 6 |
 
 ## 3. ミューテーション（テストの有効性の確認）
 
@@ -77,6 +78,8 @@
 | M31 | text.rs | `if s.chars().count() > TOOLTIP_MAX_CHARS {` → `if s.chars().count() >= TOOLTIP_MAX_CHARS {` | TT-06 | 1 | 検出 |
 | M32 | text.rs | `Notice::Added(i) \| Notice::Changed(_, i) \| Notice::Reminder(i, _) => Some(&i.id),` → `Notice::Added(i) \| Notice::Changed(i, _) \| Notice::Reminder(i, _) => Some(&i.id),` | NI-01 | 1 | 検出 |
 | M33 | notify.rs | `d.ends_with("target/debug")` → `d.ends_with("debug")` | N-04 | 1 | 検出 |
+| M34 | updater.rs | `now - t >= Duration::hours(..)` → `now - t > Duration::hours(..)` | UP-03 | 1 | 検出 |
+| M35 | updater.rs | `now < t \|\| now - t >= ..` → `now - t >= ..` | UP-05 | 1 | 検出 |
 | T01 | logic.ts | `if (start - t <= soonMinutes * 60_000) return "soon";` → `if (start - t < soonMinutes * 60_000) return "soon";` | PH-08 | 1 | 検出 |
 | T02 | logic.ts | `>= STALE_MINUTES * 60_000` → `> STALE_MINUTES * 60_000` | IS-03 | 1 | 検出 |
 | T03 | logic.ts | `return last > s ? `終日` → `return last >= s ? `終日` | RG-05 | 1 | 検出 |
@@ -88,12 +91,13 @@
 
 ## 4. 結合テスト（手動）
 
-テスト仕様書 8章の IT-01〜IT-25 は、実際の F-RevoCRM・デスクトップ・通知を使って確認する必要があるため、**まだ実施していない**。特に次の点は、ユニットテストでは確認できないので、最初に確認することを勧める。
+テスト仕様書 8章の IT-01〜IT-30 は、実際の F-RevoCRM・デスクトップ・通知を使って確認する必要があるため、**まだ実施していない**。特に次の点は、ユニットテストでは確認できないので、最初に確認することを勧める。
 
 1. IT-04：実際の CRM で、時刻が CRM のカレンダー画面と同じになること（`query` が UTC で返すという前提の確認）
 2. IT-14：終日予定が「開始・終了とも 00:00」で保存されているか（仕様書 9章 未決事項 No.2）
 3. IT-25：対象にする一番古いバージョンの F-RevoCRM で、フィールドを指定した `query` が使えるか
-4. IT-07：通知をクリックしたときの動作（インストールしたアプリで確認する。開発中の実行ファイルでは、PowerShell の通知として表示される）
+4. IT-26〜27：自動アップデート（v0.1.0 を入れた状態で v0.1.1 をリリースして確認する）
+5. IT-07：通知をクリックしたときの動作（インストールしたアプリで確認する。開発中の実行ファイルでは、PowerShell の通知として表示される）
 
 ## 5. テストの過程で見つけて直したこと
 

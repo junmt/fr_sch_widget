@@ -84,6 +84,7 @@ fn ds01_defaults_match_specification() {
     assert_eq!(s.opacity, 90);
     assert_eq!(s.theme, "system");
     assert!(s.autostart);
+    assert!(s.auto_update_check);
 }
 
 #[test]

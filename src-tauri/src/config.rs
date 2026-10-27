@@ -27,6 +27,8 @@ pub struct Settings {
     /// "system" | "light" | "dark"
     pub theme: String,
     pub autostart: bool,
+    /// 新しいバージョンを自動で確認する
+    pub auto_update_check: bool,
 }
 
 impl Default for Settings {
@@ -46,6 +48,7 @@ impl Default for Settings {
             opacity: 90,
             theme: "system".into(),
             autostart: true,
+            auto_update_check: true,
         }
     }
 }
