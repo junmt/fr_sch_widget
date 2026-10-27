@@ -333,8 +333,9 @@ pub fn dismiss_badge(app: AppHandle, id: String) {
     }
 }
 
+/// Windows ではウィンドウを作る処理を同期のコマンドで呼ぶと WebView2 が固まるため、async にする
 #[tauri::command]
-pub fn open_settings(app: AppHandle) {
+pub async fn open_settings(app: AppHandle) {
     open_settings_window(&app);
 }
 

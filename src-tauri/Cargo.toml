@@ -1,6 +1,6 @@
 [package]
 name = "fr-sch-widget"
-version = "0.1.1"
+version = "0.1.2"
 description = "F-RevoCRM 今日の予定ウィジェット"
 edition = "2021"
 
