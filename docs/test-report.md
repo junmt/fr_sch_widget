@@ -1,17 +1,17 @@
 # F-RevoCRM Schedule Widget テスト結果報告書
 
 - 実施日: 2026-10-27
-- 対象: テスト仕様書 `docs/test-specification.md` v1.4
+- 対象: テスト仕様書 `docs/test-specification.md` v1.5
 
 ## 1. 結果の概要
 
 | 種類 | 件数 | 成功 | 失敗 | 実行方法 |
 |---|---|---|---|---|
 | ユニットテスト（Rust） | 276 | 276 | 0 | Windows 上で `cargo test --lib` |
-| ユニットテスト（TypeScript） | 61 | 61 | 0 | `npm test`（vitest） |
+| ユニットテスト（TypeScript） | 71 | 71 | 0 | `npm test`（vitest） |
 | ミューテーション（Rust） | 39 | 39 検出 | 0 見逃し | 3章 |
-| ミューテーション（TypeScript） | 8 | 8 検出 | 0 見逃し | 3章 |
-| 結合テスト（手動） | 32 | - | - | **未実施**（4章） |
+| ミューテーション（TypeScript） | 10 | 10 検出 | 0 見逃し | 3章 |
+| 結合テスト（手動） | 35 | - | - | **未実施**（4章） |
 
 - テスト仕様書の2〜7章のテストID（334件）は、すべてテストコードの関数名またはテスト名に含まれていることを、スクリプトで確認した。
 - リリースビルド（`npm run tauri build`）が通り、インストーラー（NSIS、約1.7MB）ができることを確認した（自動アップデートの署名なし。署名付きのビルドは GitHub Actions のリリースで行う）。ビルド時の警告は0件。
@@ -92,6 +92,8 @@
 | T06 | logic.ts | `if (start <= t) return "ongoing";` → `if (start < t) return "ongoing";` | PH-08 | 1 | 検出 |
 | T07 | settings-logic.ts | `if (n > MAX_REMINDER_MINUTES) return null;` → `if (n >= MAX_REMINDER_MINUTES) return null;` | PM-05 | 1 | 検出 |
 | T08 | settings-logic.ts | `if (t && !result.includes(t)) result.push(t);` → `if (t) result.push(t);` | PT-01 | 1 | 検出 |
+| T09 | logic.ts | `timeLabel` の開始日の判定を外す（常に日付なし） | TL-02 | 1 | 検出 |
+| T10 | logic.ts | 長さ0の予定でも終了時刻を出す | TL-04 | 1 | 検出 |
 
 ## 4. 結合テスト（手動）
 

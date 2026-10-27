@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import {
-  compactText,
   fmtDateHeader,
   fmtRange,
   footerText,
@@ -10,9 +9,10 @@ import {
   isNotHeld,
   isStale,
   nextItem,
-  nextText,
+  nextParts,
   parseLocal,
   phaseOf,
+  timeLabel,
   type Item,
   type View,
 } from "./logic";
@@ -47,11 +47,30 @@ function storageSet(key: string, value: string): void {
 
 let compact = storageGet(COMPACT_KEY) === "1";
 
-function tag(text: string, cls: string): HTMLSpanElement {
+function span(cls: string, text: string): HTMLSpanElement {
   const el = document.createElement("span");
-  el.className = `tag ${cls}`;
+  el.className = cls;
   el.textContent = text;
   return el;
+}
+
+function tag(text: string, cls: string): HTMLSpanElement {
+  return span(`tag ${cls}`, text);
+}
+
+/** 「次は 18:00 件名 ・ あと25分」（時刻を大きく） */
+function renderNext(target: HTMLElement, v: View, now: Date, prefix: string): void {
+  const n = nextParts(v.items, now);
+  if (!n) {
+    target.replaceChildren(span("next-none", "これ以降の予定はありません"));
+    return;
+  }
+  target.replaceChildren(
+    span("next-label", prefix),
+    span("next-time", n.time),
+    span("next-subject", n.subject),
+    span("next-remaining", n.remaining),
+  );
 }
 
 function renderItem(item: Item, now: Date, soonMinutes: number, next: Item | undefined): HTMLElement {
@@ -63,16 +82,22 @@ function renderItem(item: Item, now: Date, soonMinutes: number, next: Item | und
   if (item.id === focusedId) el.classList.add("focused");
   el.dataset.id = item.id;
 
+  // 左：開始時刻（大きく）と終了時刻
+  const today = parseLocal(view!.today);
+  const label = timeLabel(item, today);
+  const when = document.createElement("div");
+  when.className = "when";
+  if (label.date) when.append(span("when-date", label.date));
+  when.append(span(item.allDay ? "when-main allday" : "when-main", label.main));
+  if (label.sub) when.append(span("when-sub", label.sub));
+
+  // 右：件名・状態・種別・場所
+  const body = document.createElement("div");
+  body.className = "body";
   const row = document.createElement("div");
   row.className = "row";
-  const time = document.createElement("span");
-  time.className = "time";
-  time.textContent = fmtRange(item, parseLocal(view!.today));
-  const subject = document.createElement("span");
-  subject.className = "subject";
-  subject.textContent = item.subject || "（件名なし）";
-  el.title = [item.subject, item.activityType, item.location].filter(Boolean).join("\n");
-  row.append(time, subject);
+  row.append(span("subject", item.subject || "（件名なし）"));
+  el.title = [fmtRange(item, today), item.subject, item.activityType, item.location].filter(Boolean).join("\n");
 
   if (phase === "ongoing") row.append(tag("進行中", "ongoing"));
   if (phase === "soon") {
@@ -92,15 +117,11 @@ function renderItem(item: Item, now: Date, soonMinutes: number, next: Item | und
     });
     row.append(b);
   }
-  el.append(row);
+  body.append(row);
 
   const meta = [item.activityType, item.location ? `📍 ${item.location}` : ""].filter(Boolean).join("  ");
-  if (meta) {
-    const m = document.createElement("div");
-    m.className = "meta";
-    m.textContent = meta;
-    el.append(m);
-  }
+  if (meta) body.append(span("meta", meta));
+  el.append(when, body);
 
   el.addEventListener("click", () => {
     void invoke("open_record", { id: item.id }).catch((e) => console.error(e));
@@ -124,8 +145,8 @@ function render(): void {
   $("widget").classList.toggle("compact", compact);
   $("date").textContent = fmtDateHeader(parseLocal(v.today));
   $("count").textContent = `今日の予定 ${v.items.length}件`;
-  $("next").textContent = nextText(v.items, now);
-  $("compact").textContent = compactText(v.items, now);
+  renderNext($("next"), v, now, "次は");
+  renderNext($("compact"), v, now, "次");
   $("header").classList.toggle("stale", isStale(v.status, now));
   $("refresh").classList.toggle("spinning", v.status.fetching);
 
@@ -238,6 +259,12 @@ function setupEvents(): void {
   $("refresh").addEventListener("click", () => void invoke("refresh_now"));
   $("settings").addEventListener("click", () => void invoke("open_settings"));
   $("update").addEventListener("click", () => void installUpdate());
+  // ブラウザの標準のメニュー（戻る・印刷など）の代わりに、このアプリのメニューを出す
+  document.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    const itemId = (e.target as HTMLElement).closest<HTMLElement>(".item")?.dataset.id ?? null;
+    void invoke("show_context_menu", { itemId, compact });
+  });
   $("status").addEventListener("click", () => {
     const s = view?.status.state;
     if (s === "auth_error" || s === "unconfigured") void invoke("open_settings");
@@ -251,6 +278,7 @@ async function main(): Promise<void> {
     render();
   });
   await listen<string>("focus-item", (e) => focusItem(e.payload));
+  await listen("toggle-compact", () => void setCompact(!compact));
   view = await invoke<View>("get_state");
   render();
   if (compact) {

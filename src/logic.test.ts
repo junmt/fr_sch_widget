@@ -10,9 +10,11 @@ import {
   isNotHeld,
   isStale,
   nextItem,
+  nextParts,
   nextText,
   parseLocal,
   phaseOf,
+  timeLabel,
   type Item,
   type Status,
 } from "./logic";
@@ -187,5 +189,52 @@ describe("7.5 footerText", () => {
   });
   it("FT-08 unconfigured", () => {
     expect(footerText({ ...ok, state: "unconfigured", lastUpdated: last })).toBe("接続設定をしてください");
+  });
+});
+
+describe("7.7 timeLabel（一覧の左の時刻）", () => {
+  const today = new Date(2026, 9, 27);
+  it("TL-01 今日の予定：開始を大きく、終了を「〜」で", () => {
+    expect(timeLabel(item("1", "2026-10-27 09:00", "2026-10-27 10:30"), today)).toEqual({ date: null, main: "09:00", sub: "〜10:30" });
+  });
+  it("TL-02 前日から続く予定：日付を付ける", () => {
+    expect(timeLabel(item("1", "2026-10-26 22:00", "2026-10-27 01:00"), today)).toEqual({ date: "10/26", main: "22:00", sub: "〜01:00" });
+  });
+  it("TL-03 翌日に終わる予定：終了に「翌」を付ける", () => {
+    expect(timeLabel(item("1", "2026-10-27 23:00", "2026-10-28 01:00"), today)).toEqual({ date: null, main: "23:00", sub: "〜翌01:00" });
+  });
+  it("TL-07 2日以上あとに終わる予定：終了に日付を付ける", () => {
+    expect(timeLabel(item("1", "2026-10-27 09:00", "2026-10-29 18:00"), today)).toEqual({ date: null, main: "09:00", sub: "〜10/29 18:00" });
+  });
+  it("TL-04 長さ0の予定：終了を出さない", () => {
+    expect(timeLabel(item("1", "2026-10-27 14:00", "2026-10-27 14:00"), today)).toEqual({ date: null, main: "14:00", sub: "" });
+  });
+  it("TL-05 終日（1日）", () => {
+    expect(timeLabel(item("1", "2026-10-27 00:00", "2026-10-28 00:00", { allDay: true }), today)).toEqual({ date: null, main: "終日", sub: "" });
+  });
+  it("TL-06 終日（複数日）", () => {
+    expect(timeLabel(item("1", "2026-10-26 00:00", "2026-10-29 00:00", { allDay: true }), today)).toEqual({
+      date: null,
+      main: "終日",
+      sub: "10/26〜10/28",
+    });
+  });
+});
+
+describe("7.8 nextParts（次の予定の表示）", () => {
+  const items = [
+    item("1", "2026-10-27 09:00", "2026-10-27 10:00"),
+    item("2", "2026-10-27 18:00", "2026-10-27 18:30", { subject: "NHK夕会" }),
+    item("3", "2026-10-27 13:00", "2026-10-27 14:00", { subject: "" }),
+  ];
+  it("NP-01 次の予定の時刻・件名・残り時間", () => {
+    expect(nextParts(items, at("2026-10-27 17:35"))).toEqual({ time: "18:00", subject: "NHK夕会", remaining: "あと25分" });
+  });
+  it("NP-02 件名が空なら（件名なし）・1時間以上は時間で", () => {
+    expect(nextParts(items, at("2026-10-27 11:30"))).toEqual({ time: "13:00", subject: "（件名なし）", remaining: "あと1時間30分" });
+  });
+  it("NP-03 次の予定がない", () => {
+    expect(nextParts(items, at("2026-10-27 18:00"))).toBeNull();
+    expect(nextParts([], at("2026-10-27 18:00"))).toBeNull();
   });
 });

@@ -161,3 +161,44 @@ export function compactText(items: Item[], now: Date): string {
   if (!n) return "これ以降の予定はありません";
   return `次 ${fmtHm(parseLocal(n.start))} ${n.subject || "（件名なし）"}（あと${fmtRemaining(minutesUntil(n, now))}）`;
 }
+
+/** 一覧の左に出す時刻。`main` が開始時刻（大きく表示する）、`date` は開始が今日でないときの日付、`sub` は終了など */
+export interface TimeLabel {
+  date: string | null;
+  main: string;
+  sub: string;
+}
+
+export function timeLabel(item: Item, today: Date): TimeLabel {
+  const s = parseLocal(item.start);
+  const e = parseLocal(item.end);
+  if (item.allDay) {
+    const last = new Date(e.getFullYear(), e.getMonth(), e.getDate() - 1);
+    return { date: null, main: "終日", sub: last > s ? `${fmtMd(s)}〜${fmtMd(last)}` : "" };
+  }
+  // 左の列は狭いので、翌日に終わるときは「翌」を付けるだけにする
+  const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+  const end = sameDay(e, today) ? fmtHm(e) : sameDay(e, tomorrow) ? `翌${fmtHm(e)}` : `${fmtMd(e)} ${fmtHm(e)}`;
+  return {
+    date: sameDay(s, today) ? null : fmtMd(s),
+    main: fmtHm(s),
+    sub: item.end === item.start ? "" : `〜${end}`,
+  };
+}
+
+/** ヘッダーと折りたたみ表示の「次の予定」（時刻を大きく出すため分けて返す） */
+export interface NextParts {
+  time: string;
+  subject: string;
+  remaining: string;
+}
+
+export function nextParts(items: Item[], now: Date): NextParts | null {
+  const n = nextItem(items, now);
+  if (!n) return null;
+  return {
+    time: fmtHm(parseLocal(n.start)),
+    subject: n.subject || "（件名なし）",
+    remaining: `あと${fmtRemaining(minutesUntil(n, now))}`,
+  };
+}

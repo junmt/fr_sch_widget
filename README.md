@@ -60,6 +60,7 @@ npm run tauri build -- --config src-tauri/tauri.ci.conf.json   # インストー
 2. ウィジェットに今日の予定が表示されます。
    - ヘッダーをドラッグすると移動、ダブルクリックすると折りたたみます。
    - 予定をクリックすると、ブラウザで CRM の詳細画面が開きます。
+   - 右クリックすると、更新・折りたたみ・最前面・設定・終了などのメニューが出ます。
    - 「NEW」「変更」のバッジはクリックすると消えます（30分たっても消えます）。
 3. ウィジェットを閉じてもトレイに残ります。終了はトレイの右クリックメニューから行います。
 
@@ -77,8 +78,8 @@ npm run tauri build -- --config src-tauri/tauri.ci.conf.json   # インストー
 
 | ワークフロー | タイミング | 内容 |
 |---|---|---|
-| `.github/workflows/ci.yml` | `main` への push、プルリクエスト | 画面のテスト → Windows で Rust のテストとインストーラーのビルド。インストーラーは Actions の成果物（installer）からダウンロードできる |
-| `.github/workflows/release.yml` | `v*` のタグの push | テストしてからインストーラーを作り、GitHub のリリースに公開する |
+| `.github/workflows/ci.yml` | プルリクエスト（Dependabot の更新など）だけ | 画面のテストと、Windows での Rust のテスト。インストーラーは作らない |
+| `.github/workflows/release.yml` | `v*` のタグの push | テストしてからインストーラーを作り、GitHub のリリースに公開する（main への push では何も動かない） |
 
 リリースの手順：
 

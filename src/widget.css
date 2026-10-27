@@ -104,19 +104,58 @@ body {
   color: var(--muted);
 }
 
+/* 次の予定（ヘッダー2行目と折りたたみ表示）：時刻を大きく */
+.next,
+.compact-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
 .next {
-  margin-top: 2px;
-  font-size: 12px;
-  color: var(--accent);
-  font-weight: 600;
+  margin-top: 4px;
 }
 
 .compact-line {
   display: none;
-  white-space: nowrap;
+}
+
+.next-label {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.next-time {
+  flex: none;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.next-subject {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 600;
+}
+
+.next-remaining {
+  flex: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--soon);
+}
+
+.next-none {
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .icon-btn {
@@ -168,9 +207,52 @@ body {
 
 .item {
   position: relative;
-  padding: 5px 10px 5px 12px;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: start;
+  padding: 6px 10px 6px 9px;
   border-left: 3px solid transparent;
   cursor: pointer;
+}
+
+/* 左の列：開始時刻を大きく、終了時刻を小さく */
+.when {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.when-date {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.when-main {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+}
+
+.when-main.allday {
+  font-size: 13px;
+  font-weight: 700;
+  padding-top: 3px;
+}
+
+.when-sub {
+  white-space: nowrap;
+  margin-top: 1px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.body {
+  min-width: 0;
+  padding-top: 2px;
 }
 
 .item:hover {
@@ -187,13 +269,6 @@ body {
   gap: 6px;
 }
 
-.item .time {
-  flex: none;
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-  font-size: 12px;
-}
-
 .item .subject {
   flex: 1;
   min-width: 0;
@@ -203,7 +278,8 @@ body {
 }
 
 .item .meta {
-  margin-top: 1px;
+  display: block;
+  margin-top: 2px;
   font-size: 11px;
   color: var(--muted);
   white-space: nowrap;
@@ -251,10 +327,7 @@ body {
   background: var(--line);
 }
 
-.item.allday .time {
-  color: var(--fg);
-  font-weight: 600;
-}
+
 
 .item.done {
   opacity: 0.5;
@@ -265,7 +338,10 @@ body {
   border-left-color: var(--accent);
 }
 
-.item.ongoing .time,
+.item.ongoing .when-main {
+  color: var(--accent);
+}
+
 .item.ongoing .subject {
   font-weight: 700;
   color: var(--fg);
@@ -276,6 +352,10 @@ body {
   border-left-color: var(--soon);
   outline: 1px solid var(--soon);
   outline-offset: -1px;
+}
+
+.item.soon .when-main {
+  color: var(--soon);
 }
 
 .item.held .subject {
@@ -349,5 +429,9 @@ body {
 }
 
 .widget.compact .compact-line {
-  display: block;
+  display: flex;
+}
+
+.widget.compact .next-time {
+  font-size: 18px;
 }

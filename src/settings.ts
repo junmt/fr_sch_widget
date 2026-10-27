@@ -158,6 +158,11 @@ async function save(e: Event): Promise<void> {
   }
 }
 
+// 入力欄（貼り付けなどに使う）以外では、ブラウザの標準のメニューを出さない
+document.addEventListener("contextmenu", (e) => {
+  if (!(e.target as HTMLElement).closest("input, textarea")) e.preventDefault();
+});
+
 async function main(): Promise<void> {
   fill(await invoke<SettingsView>("get_settings"));
   document.getElementById("form")!.addEventListener("submit", (e) => void save(e));

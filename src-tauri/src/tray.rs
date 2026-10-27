@@ -56,13 +56,7 @@ pub fn create(app: &App, always_on_top: bool) -> tauri::Result<()> {
                     }
                 });
             }
-            "quit" => {
-                let app = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    runtime::logout(&app).await;
-                    app.exit(0);
-                });
-            }
+            "quit" => runtime::quit(app),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {

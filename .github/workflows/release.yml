@@ -32,9 +32,10 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      # release でテストして、インストーラーのビルドと依存ライブラリのコンパイルを共有する
       - name: cargo test
         working-directory: src-tauri
-        run: cargo test --lib
+        run: cargo test --lib --release
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

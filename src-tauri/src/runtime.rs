@@ -243,6 +243,15 @@ pub async fn logout(app: &AppHandle) {
     }
 }
 
+/// CRM からログアウトしてから終了する
+pub fn quit(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        logout(&app).await;
+        app.exit(0);
+    });
+}
+
 // ---------- ウィンドウ ----------
 
 pub fn show_main(app: &AppHandle) {

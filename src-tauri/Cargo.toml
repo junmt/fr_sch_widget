@@ -1,6 +1,6 @@
 [package]
 name = "fr-sch-widget"
-version = "0.1.5"
+version = "0.1.6"
 description = "F-RevoCRM Schedule Widget（F-RevoCRM の今日の予定を表示する Windows ウィジェット）"
 edition = "2021"
 
@@ -37,9 +37,8 @@ tauri-winrt-notification = "0.8"
 mockito = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 
+# ビルドの速さを優先して thin LTO にする（サイズの差は小さい）
 [profile.release]
-codegen-units = 1
-lto = true
+lto = "thin"
 opt-level = "s"
-panic = "abort"
 strip = true

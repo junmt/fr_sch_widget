@@ -1,4 +1,5 @@
 mod config;
+mod context_menu;
 mod crm;
 mod engine;
 mod notify;
@@ -65,6 +66,7 @@ pub fn run() {
             runtime::test_connection,
             updater::install_update,
             updater::check_update,
+            context_menu::show_context_menu,
         ])
         .setup(|app| {
             let dir = config::data_dir();
@@ -87,6 +89,7 @@ pub fn run() {
                 .unwrap_or(true);
             if let Some(w) = app.get_webview_window(MAIN) {
                 let _ = w.set_always_on_top(always_on_top);
+                w.on_menu_event(context_menu::handle);
                 place_main_window(&w, first_run);
                 let _ = w.show();
             }
