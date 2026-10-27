@@ -21,7 +21,7 @@ jobs:
             Write-Error "タグ ${{ github.ref_name }} と tauri.conf.json の version ($version) が違います"
             exit 1
           }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
