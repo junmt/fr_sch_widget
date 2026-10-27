@@ -306,10 +306,33 @@ function moveDay(delta: number): void {
   setDay(addDays(selectedDay ?? view.today, delta));
 }
 
-async function installUpdate(): Promise<void> {
+/**
+ * 更新の確認と失敗の知らせをウィジェットの中に出す。
+ * window.confirm / alert は WebView2 がウィジェットの位置に合わせて出すため、小さい画面では画面の外にはみ出す。
+ */
+function showUpdateConfirm(text: string, error = false): void {
+  const msg = $("update-confirm-text");
+  msg.textContent = text;
+  msg.classList.toggle("error", error);
+  ($("update-ok") as HTMLButtonElement).hidden = error;
+  $("update-cancel").textContent = error ? "閉じる" : "やめる";
+  $("update-confirm").hidden = false;
+}
+
+function hideUpdateConfirm(): void {
+  $("update-confirm").hidden = true;
+}
+
+function askInstallUpdate(): void {
   const version = view?.updateVersion;
   if (!version || updating) return;
-  if (!window.confirm(`v${version} に更新します。\nウィジェットはいったん終了し、更新が終わると起動し直します。`)) return;
+  showUpdateConfirm(`v${version} に更新します。\nウィジェットはいったん終了し、更新が終わると起動し直します。`);
+}
+
+async function installUpdate(): Promise<void> {
+  const version = view?.updateVersion;
+  hideUpdateConfirm();
+  if (!version || updating) return;
   const btn = $("update") as HTMLButtonElement;
   updating = true;
   btn.disabled = true;
@@ -320,7 +343,7 @@ async function installUpdate(): Promise<void> {
     updating = false;
     btn.disabled = false;
     btn.textContent = `⬆ v${version} に更新`;
-    window.alert(String(e));
+    showUpdateConfirm(String(e), true);
   }
 }
 
@@ -346,7 +369,9 @@ function setupEvents(): void {
     void invoke("open_new_event", { date }).catch((e) => window.alert(String(e)));
   });
   $("settings").addEventListener("click", () => void invoke("open_settings"));
-  $("update").addEventListener("click", () => void installUpdate());
+  $("update").addEventListener("click", askInstallUpdate);
+  $("update-ok").addEventListener("click", () => void installUpdate());
+  $("update-cancel").addEventListener("click", hideUpdateConfirm);
   // ブラウザの標準のメニュー（戻る・印刷など）の代わりに、このアプリのメニューを出す
   document.addEventListener("contextmenu", (e) => {
     e.preventDefault();

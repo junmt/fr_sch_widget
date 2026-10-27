@@ -448,6 +448,59 @@ body {
   cursor: default;
 }
 
+/* 更新の確認（ウィンドウの外に出るダイアログの代わりに、ウィジェットの中に出す） */
+.confirm {
+  padding: 8px 10px;
+  border-top: 1px solid var(--line);
+  background: var(--ongoing-bg);
+  font-size: 12px;
+}
+
+.confirm[hidden] {
+  display: none;
+}
+
+.confirm-text {
+  margin: 0 0 6px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.confirm-text.error {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.confirm-btn {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 10px;
+  font: inherit;
+  color: var(--fg);
+  background: transparent;
+  cursor: pointer;
+}
+
+.confirm-btn:hover {
+  background: var(--line);
+}
+
+.confirm-btn.primary {
+  border-color: var(--badge-new);
+  color: #fff;
+  background: var(--badge-new);
+}
+
+.confirm-btn[hidden] {
+  display: none;
+}
+
 .status.link {
   cursor: pointer;
   text-decoration: underline;
@@ -462,6 +515,7 @@ body {
 .widget.compact .header-row,
 .widget.compact .next,
 .widget.compact .list,
+.widget.compact .confirm,
 .widget.compact .footer {
   display: none;
 }
