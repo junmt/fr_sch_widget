@@ -12,7 +12,7 @@ jobs:
   release:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: タグと tauri.conf.json のバージョンが同じか確認する
         shell: pwsh
         run: |
