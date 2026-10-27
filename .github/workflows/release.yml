@@ -21,21 +21,36 @@ jobs:
             Write-Error "タグ ${{ github.ref_name }} と tauri.conf.json の version ($version) が違います"
             exit 1
           }
+      # リリースは最初に作る。ビルドの後に作ると、その間に main のワークフローが変わったとき
+      # GITHUB_TOKEN では作れない（Resource not accessible by integration）ことがあるため
+      - name: リリースを作る
+        id: release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view $env:TAG --json databaseId *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:TAG --verify-tag --title "F-RevoCRM Schedule Widget $env:TAG" --notes "Windows 用のインストーラー（*_x64-setup.exe）をダウンロードして実行してください。使い方は README を参照してください。"
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }
+          $id = gh release view $env:TAG --json databaseId --jq .databaseId
+          "id=$id" >> $env:GITHUB_OUTPUT
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
+      # rust-cache は使わない（タグで保存したキャッシュは次のタグから使えず、保存の時間だけかかるため）
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> target
       - run: npm ci
       - run: npm test
       - run: npm run build
-      # release でテストして、インストーラーのビルドと依存ライブラリのコンパイルを共有する
+      # インストーラーのビルド（tauri build は `--features tauri/custom-protocol --release` で cargo を呼ぶ）と
+      # 同じ設定でテストして、依存ライブラリのコンパイルを共有する
       - name: cargo test
         working-directory: src-tauri
-        run: cargo test --lib --release
+        run: cargo test --lib --release --features tauri/custom-protocol
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -43,12 +58,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: F-RevoCRM Schedule Widget ${{ github.ref_name }}
-          releaseBody: |
-            Windows 用のインストーラー（`*_x64-setup.exe`）をダウンロードして実行してください。
-            使い方は README を参照してください。
+          # 最初に作ったリリースにアップロードするだけにする（releaseId を渡すと、リリースの作成・更新はしない）
+          releaseId: ${{ steps.release.outputs.id }}
           # 自動アップデートが読む latest.json もリリースに上げる
           uploadUpdaterJson: true
-          releaseDraft: false
-          prerelease: false
