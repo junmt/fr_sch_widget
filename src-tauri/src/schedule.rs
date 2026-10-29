@@ -1,5 +1,6 @@
 //! 予定データの変換・絞り込み・差分・リマインド判定（I/O を持たない純粋なロジック）
 
+use crate::rooms::RoomUse;
 use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -25,6 +26,9 @@ pub struct ScheduleItem {
     pub modified_time: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub badge: Option<Badge>,
+    /// 使う会議室（仕様 F-14。`rooms::annotate_rooms` で付ける）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rooms: Vec<RoomUse>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,7 +39,7 @@ pub enum Badge {
 }
 
 /// 画面とキャッシュでは "YYYY-MM-DDTHH:MM" 形式でやりとりする
-mod local_minute {
+pub(crate) mod local_minute {
     use chrono::NaiveDateTime;
     use serde::{Deserialize, Deserializer, Serializer};
 
@@ -152,6 +156,7 @@ pub fn parse_record<Tz: TimeZone>(rec: &Value, source: CrmTimeZone, tz: &Tz) -> 
         location: (!location.is_empty()).then_some(location),
         modified_time: str_field(rec, "modifiedtime").to_string(),
         badge: None,
+        rooms: Vec::new(),
     })
 }
 
@@ -297,7 +302,7 @@ pub fn apply_badges(items: &mut [ScheduleItem], badges: &Badges) {
 }
 
 /// リマインドの対象か（終日・完了・中止は対象外）
-fn remindable(item: &ScheduleItem) -> bool {
+pub(crate) fn remindable(item: &ScheduleItem) -> bool {
     !item.all_day && !is_held(item) && !is_not_held(item)
 }
 

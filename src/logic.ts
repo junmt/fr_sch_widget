@@ -2,6 +2,19 @@
 
 export type Badge = "new" | "changed";
 
+/** 同じ会議室の、終了時刻までに始まる別の予約（仕様 F-14） */
+export interface RoomNext {
+  subject: string;
+  start: string;
+  end: string;
+}
+
+/** 予定が使う会議室 */
+export interface RoomUse {
+  name: string;
+  next?: RoomNext;
+}
+
 export interface Item {
   id: string;
   recordId: number;
@@ -14,6 +27,7 @@ export interface Item {
   status: string;
   location?: string;
   badge?: Badge;
+  rooms?: RoomUse[];
 }
 
 export type SyncState = "unconfigured" | "ok" | "error" | "auth_error";
@@ -216,4 +230,32 @@ export function dayLabel(date: string, today: string): string {
   if (date === addDays(today, 1)) return "明日";
   if (date === addDays(today, -1)) return "昨日";
   return "";
+}
+
+/** 終了の何分前から「会議室の次の予約」を警告するか（Rust の ROOM_ALERT_MINUTES と同じ） */
+export const ROOM_ALERT_MINUTES = 5;
+
+/** 使う会議室の名前（"会議室A, 会議室B"。なければ空） */
+export function roomNames(item: Item): string {
+  return (item.rooms ?? []).map((r) => r.name).join(", ");
+}
+
+/** 終了直後の予約（"会議室A 11:00〜 件名"）。予約の開始が表示している日でなければ日付を付ける */
+export function roomNextTexts(item: Item, day: Date): string[] {
+  const result: string[] = [];
+  for (const r of item.rooms ?? []) {
+    if (!r.next) continue;
+    const s = parseLocal(r.next.start);
+    const time = sameDay(s, day) ? fmtHm(s) : `${fmtMd(s)} ${fmtHm(s)}`;
+    result.push(`${r.name} ${time}〜 ${r.next.subject || "（件名なし）"}`);
+  }
+  return result;
+}
+
+/** 終了直後に会議室の予約があり、終了の5分前〜終了の間か（終日・完了・中止は除く） */
+export function roomAlertActive(item: Item, now: Date): boolean {
+  if (item.allDay || isHeld(item) || isNotHeld(item)) return false;
+  if (!(item.rooms ?? []).some((r) => r.next)) return false;
+  const left = parseLocal(item.end).getTime() - now.getTime();
+  return left > 0 && left <= ROOM_ALERT_MINUTES * 60_000;
 }

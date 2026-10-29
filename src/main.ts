@@ -15,6 +15,9 @@ import {
   nextParts,
   parseLocal,
   phaseOf,
+  roomAlertActive,
+  roomNames,
+  roomNextTexts,
   timeLabel,
   type Item,
   type View,
@@ -99,6 +102,7 @@ function renderItem(item: Item, now: Date, soonMinutes: number, next: Item | und
   if (isHeld(item)) el.classList.add("held");
   if (isNotHeld(item)) el.classList.add("notheld");
   if (item.id === focusedId) el.classList.add("focused");
+  if (roomAlertActive(item, now)) el.classList.add("room-alert");
   el.dataset.id = item.id;
 
   // 左：開始時刻（大きく）と終了時刻（表示している日を基準にする）
@@ -115,7 +119,18 @@ function renderItem(item: Item, now: Date, soonMinutes: number, next: Item | und
   const row = document.createElement("div");
   row.className = "row";
   row.append(span("subject", item.subject || "（件名なし）"));
-  el.title = [fmtRange(item, day), item.subject, item.activityType, item.location].filter(Boolean).join("\n");
+  const rooms = roomNames(item);
+  const roomNext = roomNextTexts(item, day);
+  el.title = [
+    fmtRange(item, day),
+    item.subject,
+    item.activityType,
+    item.location,
+    rooms ? `会議室: ${rooms}` : "",
+    ...roomNext.map((t) => `⚠ 終了直後に予約: ${t}`),
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   if (phase === "ongoing") row.append(tag("進行中", "ongoing"));
   if (phase === "soon") {
@@ -137,8 +152,11 @@ function renderItem(item: Item, now: Date, soonMinutes: number, next: Item | und
   }
   body.append(row);
 
-  const meta = [item.activityType, item.location ? `📍 ${item.location}` : ""].filter(Boolean).join("  ");
+  const meta = [item.activityType, item.location ? `📍 ${item.location}` : "", rooms ? `🏢 ${rooms}` : ""]
+    .filter(Boolean)
+    .join("  ");
   if (meta) body.append(span("meta", meta));
+  if (roomNext.length > 0) body.append(span("room-next", `⚠ 直後に予約: ${roomNext.join(" / ")}`));
   el.append(when, body);
 
   el.addEventListener("click", () => {

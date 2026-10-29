@@ -61,8 +61,23 @@ fn ns09_username_trimmed() {
     assert_eq!(norm(Settings { username: " jun ".into(), ..Default::default() }).username, "jun");
 }
 #[test]
+fn ns11_meeting_rooms_trimmed_deduped() {
+    let s = norm(Settings {
+        meeting_rooms: vec![" 会議室A ".into(), "".into(), "  ".into(), "会議室 a".into(), "会議室B=19x12".into(), "会議室A".into()],
+        ..Default::default()
+    });
+    // 空白・大文字小文字の違いだけのものは重複とみなし、最初のものを残す
+    assert_eq!(s.meeting_rooms, vec!["会議室A".to_string(), "会議室B=19x12".to_string()]);
+}
+#[test]
 fn ns10_idempotent() {
-    let once = norm(Settings { interval_minutes: 99, reminder_minutes: vec![1, 10], crm_url: "https://x/".into(), ..Default::default() });
+    let once = norm(Settings {
+        interval_minutes: 99,
+        reminder_minutes: vec![1, 10],
+        crm_url: "https://x/".into(),
+        meeting_rooms: vec![" A ".into(), "a".into()],
+        ..Default::default()
+    });
     assert_eq!(norm(once.clone()), once);
     assert_eq!(norm(Settings::default()), Settings::default());
 }
@@ -86,6 +101,7 @@ fn ds01_defaults_match_specification() {
     assert_eq!(s.theme, "system");
     assert!(s.autostart);
     assert!(s.auto_update_check);
+    assert!(s.meeting_rooms.is_empty());
 }
 
 #[test]
@@ -258,6 +274,7 @@ fn sample_cache() -> Cache {
         location: Some("A".into()),
         modified_time: String::new(),
         badge: None,
+        rooms: Vec::new(),
     };
     Cache { source: SRC.into(), date: today(), last_updated: Local::now(), items: vec![item] }
 }

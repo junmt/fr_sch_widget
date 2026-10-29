@@ -3,6 +3,7 @@
 
 use crate::config::{Cache, Settings};
 use crate::crm::CrmError;
+use crate::rooms::due_room_alerts;
 use crate::schedule::{
     apply_badges, diff, due_reminders, expire_badges, record_badges, Badges, ScheduleItem,
 };
@@ -49,6 +50,8 @@ pub enum Notice {
     Changed(ScheduleItem, ScheduleItem),
     Removed(ScheduleItem),
     Reminder(ScheduleItem, i64),
+    /// 終了直後に会議室の次の予約がある（終了までの残り分）
+    RoomNext(ScheduleItem, i64),
 }
 
 /// 連続失敗時の間隔の上限（分）。設定した間隔がこれより長いときは設定値を上限にする
@@ -197,13 +200,14 @@ impl Engine {
         Duration::from_secs(u64::from((interval * factor).min(cap)) * 60)
     }
 
-    /// 毎回のタイマー処理。リマインドとバッジの期限切れを見る。
+    /// 毎回のタイマー処理。リマインド・会議室の次の予約・バッジの期限切れを見る。
     /// 戻り値は (出すべき通知, 一覧の見た目が変わったか)
     pub fn tick(&mut self, now: NaiveDateTime, settings: &Settings) -> (Vec<Notice>, bool) {
-        let reminders = due_reminders(&self.items, now, &settings.reminder_minutes, &mut self.fired)
+        let mut reminders: Vec<Notice> = due_reminders(&self.items, now, &settings.reminder_minutes, &mut self.fired)
             .into_iter()
             .map(|(i, m)| Notice::Reminder(i, m))
             .collect();
+        reminders.extend(due_room_alerts(&self.items, now, &mut self.fired).into_iter().map(|(i, m)| Notice::RoomNext(i, m)));
         let expired = expire_badges(&mut self.badges, now);
         if expired {
             apply_badges(&mut self.items, &self.badges);

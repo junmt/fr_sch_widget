@@ -3,7 +3,8 @@
 use crate::config::{self, credentials, KeyAction, Settings};
 use crate::crm::{format_user_date, new_event_url, record_url, AuthState, CrmClient, CrmError, Session};
 use crate::engine::{is_resumed, should_fetch, Engine, Notice, SyncState, SyncStatus};
-use crate::schedule::{build_today, query_range, CrmTimeZone, ScheduleItem};
+use crate::rooms::{build_day, connection_room_text, parse_room_spec, resolve_rooms, Room};
+use crate::schedule::{query_range, CrmTimeZone, ScheduleItem};
 use crate::{notify, text, tray};
 use chrono::{DateTime, Local, NaiveDate};
 use serde::Serialize;
@@ -28,6 +29,15 @@ struct Connection {
     session: Option<Session>,
     /// CRM のユーザー設定の日付形式（登録画面に日付を渡すときに使う。読めなかったら空）
     date_format: Option<String>,
+    /// 設定の会議室を CRM のユーザーに結びつけたもの（設定を保存すると接続ごと作り直す）
+    rooms: Option<Vec<Room>>,
+}
+
+/// 取得した予定（日時は CRM のタイムゾーンのまま）
+struct Fetched {
+    records: Vec<Value>,
+    /// 会議室ごとの予約（会議室のユーザーが担当の予定）。取得できなかった会議室は入らない
+    rooms: Vec<(String, Vec<Value>)>,
 }
 
 pub struct AppState {
@@ -185,11 +195,11 @@ async fn fetch_once(app: &AppHandle) {
     {
         let mut e = lock(&st.engine);
         match result {
-            Ok(records) => {
+            Ok(fetched) => {
                 let today = now.date_naive();
                 e.roll_day(today);
-                let items = build_today(&records, settings.crm_time_zone, &Local, today, &settings.filter());
-                log::info!("取得しました: {}件（今日の表示 {}件）", records.len(), items.len());
+                let items = build_day(&fetched.records, &fetched.rooms, settings.crm_time_zone, &Local, today, &settings.filter());
+                log::info!("取得しました: {}件（今日の表示 {}件）", fetched.records.len(), items.len());
                 notices = e.on_success(items, now, &settings);
                 save = e.cache(&settings.cache_source());
             }
@@ -209,9 +219,9 @@ async fn fetch_once(app: &AppHandle) {
     publish(app);
 }
 
-/// ログイン（必要なら）して、今日の前後の予定を取得する。セッション切れなら1回だけログインし直す
-/// `day` の前後の予定を取得する（ポーリングは今日、日めくりはその日）
-async fn fetch_records(st: &AppState, settings: &Settings, access_key: &str, day: NaiveDate) -> Result<Vec<Value>, CrmError> {
+/// ログイン（必要なら）して、`day` の前後の予定を取得する（ポーリングは今日、日めくりはその日）。
+/// セッション切れなら1回だけログインし直す。会議室を設定していれば、その予約も取得する
+async fn fetch_records(st: &AppState, settings: &Settings, access_key: &str, day: NaiveDate) -> Result<Fetched, CrmError> {
     let mut guard = st.conn.lock().await;
     let conn_key = format!("{}|{}", settings.crm_url, settings.username);
     if guard.as_ref().map_or(true, |c| c.key != conn_key) {
@@ -220,6 +230,7 @@ async fn fetch_records(st: &AppState, settings: &Settings, access_key: &str, day
             client: Arc::new(CrmClient::new(&settings.crm_url)?),
             session: None,
             date_format: None,
+            rooms: None,
         });
     }
     let conn = guard.as_mut().expect("接続は直前に作った");
@@ -244,6 +255,53 @@ async fn fetch_records(st: &AppState, settings: &Settings, access_key: &str, day
             };
             log::info!("ユーザーの日付形式: {format:?}");
             conn.date_format = Some(format);
+        }
+    }
+    let records = result?;
+    let rooms = fetch_rooms(conn, &settings.meeting_rooms, from, to).await;
+    Ok(Fetched { records, rooms })
+}
+
+/// 設定の会議室を CRM のユーザーに結びつける。戻り値の2つ目は見つからなかった名前。
+/// ユーザーの一覧を読めなかったとき（通信の失敗・権限がないなど）は Err（ID を書いた会議室だけ返す）
+async fn resolve_room_users(client: &CrmClient, session: &Session, entries: &[String]) -> Result<(Vec<Room>, Vec<String>), (Vec<Room>, Vec<String>)> {
+    let specs: Vec<_> = entries.iter().map(|e| parse_room_spec(e)).collect();
+    if specs.iter().all(|s| s.id.is_some()) {
+        return Ok(resolve_rooms(&specs, &[]));
+    }
+    match client.fetch_users(session).await {
+        Ok(users) => Ok(resolve_rooms(&specs, &users)),
+        Err(e) => {
+            log::warn!("会議室を探すためのユーザーの一覧を読めませんでした: {e}");
+            Err(resolve_rooms(&specs, &[]))
+        }
+    }
+}
+
+/// 会議室の予約を取得する。失敗しても自分の予定の表示は続ける（その会議室の情報が出ないだけ）
+async fn fetch_rooms(conn: &mut Connection, entries: &[String], from: NaiveDate, to: NaiveDate) -> Vec<(String, Vec<Value>)> {
+    let Some(session) = conn.session.clone().filter(|_| !entries.is_empty()) else {
+        return Vec::new();
+    };
+    let rooms = match &conn.rooms {
+        Some(r) => r.clone(),
+        None => match resolve_room_users(&conn.client, &session, entries).await {
+            Ok((rooms, missing)) => {
+                if !missing.is_empty() {
+                    log::warn!("会議室のユーザーが見つかりません: {}", missing.join(", "));
+                }
+                conn.rooms = Some(rooms.clone());
+                rooms
+            }
+            // 一覧を読めなかったときは覚えず、次の取得でもう一度探す
+            Err((rooms, _)) => rooms,
+        },
+    };
+    let mut result = Vec::new();
+    for room in rooms {
+        match conn.client.fetch_events_of(&session, &room.id, from, to).await {
+            Ok(records) => result.push((room.name, records)),
+            Err(e) => log::warn!("会議室「{}」の予約を取得できませんでした: {e}", room.name),
         }
     }
     result
@@ -389,8 +447,8 @@ pub async fn get_day(state: tauri::State<'_, AppState>, date: NaiveDate) -> Resu
     let key = credentials::load(&settings.username)
         .filter(|_| settings.is_connection_configured())
         .ok_or("接続設定をしてください")?;
-    let records = fetch_records(&state, &settings, &key, date).await.map_err(|e| e.to_string())?;
-    let items = build_today(&records, settings.crm_time_zone, &Local, date, &settings.filter());
+    let fetched = fetch_records(&state, &settings, &key, date).await.map_err(|e| e.to_string())?;
+    let items = build_day(&fetched.records, &fetched.rooms, settings.crm_time_zone, &Local, date, &settings.filter());
     Ok(DayView { date, items, fetched_at: Local::now() })
 }
 
@@ -478,6 +536,7 @@ pub async fn test_connection(
     username: String,
     access_key: Option<String>,
     crm_time_zone: Option<CrmTimeZone>,
+    meeting_rooms: Option<Vec<String>>,
 ) -> Result<String, String> {
     let url = crate::crm::normalize_url(&crm_url);
     let username = username.trim().to_string();
@@ -502,10 +561,19 @@ pub async fn test_connection(
     let today = Local::now().date_naive();
     let (from, to) = query_range(today);
     let result = client.fetch_events(&session, from, to).await;
+    let rooms = Settings { meeting_rooms: meeting_rooms.unwrap_or_default(), ..Default::default() }.normalized().meeting_rooms;
+    let room_text = if result.is_ok() && !rooms.is_empty() {
+        match resolve_room_users(&client, &session, &rooms).await {
+            Ok((found, missing)) => connection_room_text(found.len(), &missing),
+            Err((found, missing)) => format!("{}（ユーザーの一覧を読めないため、ID を「名前=19x12」の形で書いてください）", connection_room_text(found.len(), &missing)),
+        }
+    } else {
+        String::new()
+    };
     client.logout(&session).await;
     let records = result.map_err(|e| e.to_string())?;
     let source = crm_time_zone.unwrap_or_default();
-    let count = build_today(&records, source, &Local, today, &Settings::default().filter()).len();
-    Ok(format!("接続できました（今日の予定 {count}件）"))
+    let count = build_day(&records, &[], source, &Local, today, &Settings::default().filter()).len();
+    Ok(format!("接続できました（今日の予定 {count}件）{room_text}"))
 }
 

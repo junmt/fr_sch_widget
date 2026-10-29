@@ -42,6 +42,7 @@ fn item(id: &str, start: &str, end: &str) -> ScheduleItem {
         location: None,
         modified_time: String::new(),
         badge: None,
+        rooms: Vec::new(),
     }
 }
 

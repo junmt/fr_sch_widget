@@ -19,6 +19,7 @@ interface Settings {
   theme: "system" | "light" | "dark";
   autostart: boolean;
   autoUpdateCheck: boolean;
+  meetingRooms: string[];
 }
 
 interface SettingsView {
@@ -64,6 +65,7 @@ function fill(v: SettingsView): void {
   (document.getElementById("theme") as HTMLSelectElement).value = s.theme;
   input("autostart").checked = s.autostart;
   input("autoUpdateCheck").checked = s.autoUpdateCheck;
+  input("meetingRooms").value = s.meetingRooms.join(", ");
   updateDerived();
   applyTheme(s.theme);
 }
@@ -106,6 +108,7 @@ function collect(): { settings: Settings } | { error: string } {
       theme: (document.getElementById("theme") as HTMLSelectElement).value as Settings["theme"],
       autostart: input("autostart").checked,
       autoUpdateCheck: input("autoUpdateCheck").checked,
+      meetingRooms: parseTypes(input("meetingRooms").value),
     },
   };
 }
@@ -129,6 +132,7 @@ async function testConnection(): Promise<void> {
       username: input("username").value,
       accessKey: accessKeyArg(),
       crmTimeZone: crmTimeZone(),
+      meetingRooms: parseTypes(input("meetingRooms").value),
     });
     setResult("testResult", msg, true);
   } catch (e) {

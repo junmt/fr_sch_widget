@@ -434,6 +434,70 @@ async fn fe06_no_rows() {
     m.assert_async().await;
 }
 #[tokio::test]
+async fn fo01_fetch_events_of_other_owner() {
+    // 会議室のユーザーの予定：担当者の ID だけが違う VTQL を送る
+    let mut server = Server::new_async().await;
+    let (from, to) = range();
+    let m = server
+        .mock("GET", "/webservice.php")
+        .match_query(Matcher::AllOf(vec![
+            q("operation", "query"),
+            q("sessionName", "SESS123"),
+            q("query", &build_query("19x12", from, to, 0, false)),
+        ]))
+        .with_body(ok(rows(2, 0)))
+        .expect(1)
+        .create_async()
+        .await;
+    assert_eq!(client(&server).fetch_events_of(&session(), "19x12", from, to).await.unwrap().len(), 2);
+    m.assert_async().await;
+}
+#[tokio::test]
+async fn fo02_fetch_events_of_pages_and_falls_back() {
+    let mut server = Server::new_async().await;
+    let (from, to) = range();
+    let mut mock = |offset: usize, select_all: bool, body: String| {
+        server
+            .mock("GET", "/webservice.php")
+            .match_query(Matcher::AllOf(vec![q("operation", "query"), q("query", &build_query("19x12", from, to, offset, select_all))]))
+            .with_body(body)
+            .expect(1)
+    };
+    let explicit = mock(0, false, err("QUERY_SYNTAX_ERROR")).create_async().await;
+    let p0 = mock(0, true, ok(rows(100, 0))).create_async().await;
+    let p1 = mock(100, true, ok(rows(5, 100))).create_async().await;
+    assert_eq!(client(&server).fetch_events_of(&session(), "19x12", from, to).await.unwrap().len(), 105);
+    explicit.assert_async().await;
+    p0.assert_async().await;
+    p1.assert_async().await;
+}
+#[tokio::test]
+async fn fu01_fetch_users_pages() {
+    let mut server = Server::new_async().await;
+    let mut mock = |offset: usize, body: String| {
+        server
+            .mock("GET", "/webservice.php")
+            .match_query(Matcher::AllOf(vec![
+                q("operation", "query"),
+                q("sessionName", "SESS123"),
+                q("query", &crate::rooms::build_users_query(offset)),
+            ]))
+            .with_body(body)
+            .expect(1)
+    };
+    let p0 = mock(0, ok(rows(100, 0))).create_async().await;
+    let p1 = mock(100, ok(rows(0, 100))).create_async().await;
+    assert_eq!(client(&server).fetch_users(&session()).await.unwrap().len(), 100);
+    p0.assert_async().await;
+    p1.assert_async().await;
+}
+#[tokio::test]
+async fn fu02_fetch_users_permission_error() {
+    let mut server = Server::new_async().await;
+    server.mock("GET", "/webservice.php").match_query(Matcher::Any).with_body(err("ACCESS_DENIED")).create_async().await;
+    assert_eq!(client(&server).fetch_users(&session()).await, Err(CrmError::AccessDenied));
+}
+#[tokio::test]
 async fn fb01_api_error_falls_back_and_remembers() {
     let mut server = Server::new_async().await;
     let explicit = query_mock(&mut server, 0, false, err("QUERY_SYNTAX_ERROR"), 1).await;

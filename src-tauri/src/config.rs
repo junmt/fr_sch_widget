@@ -31,6 +31,8 @@ pub struct Settings {
     pub autostart: bool,
     /// 新しいバージョンを自動で確認する
     pub auto_update_check: bool,
+    /// 会議室（CRM のユーザー名か氏名。`会議室A=19x12` のように ID も書ける。仕様 F-14）
+    pub meeting_rooms: Vec<String>,
 }
 
 impl Default for Settings {
@@ -52,6 +54,7 @@ impl Default for Settings {
             theme: "system".into(),
             autostart: true,
             auto_update_check: true,
+            meeting_rooms: Vec::new(),
         }
     }
 }
@@ -77,6 +80,13 @@ impl Settings {
             .iter()
             .map(|t| t.trim().to_string())
             .filter(|t| !t.is_empty())
+            .collect();
+        let mut seen = std::collections::HashSet::new();
+        self.meeting_rooms = self
+            .meeting_rooms
+            .iter()
+            .map(|r| r.trim().to_string())
+            .filter(|r| !r.is_empty() && seen.insert(crate::rooms::name_key(r)))
             .collect();
         if !matches!(self.theme.as_str(), "system" | "light" | "dark") {
             self.theme = "system".into();

@@ -16,6 +16,9 @@ import {
   nextText,
   parseLocal,
   phaseOf,
+  roomAlertActive,
+  roomNames,
+  roomNextTexts,
   timeLabel,
   type Item,
   type Status,
@@ -269,5 +272,54 @@ describe("7.9 日めくり addDays / dayLabel", () => {
   it("DL-05 月をまたぐ明日・昨日", () => {
     expect(dayLabel("2026-11-01", "2026-10-31")).toBe("明日");
     expect(dayLabel("2026-10-31", "2026-11-01")).toBe("昨日");
+  });
+});
+
+describe("7.10 会議室 roomNames / roomNextTexts / roomAlertActive", () => {
+  const next = { subject: "他部署MTG", start: "2026-10-27T15:00", end: "2026-10-27T16:00" };
+  const withNext = item("1", "2026-10-27 14:00", "2026-10-27 15:00", {
+    rooms: [{ name: "会議室A", next }, { name: "会議室B" }],
+  });
+  const day = parseLocal("2026-10-27");
+
+  it("RN-01 会議室なし（rooms がない・空）", () => {
+    expect(roomNames(std)).toBe("");
+    expect(roomNames({ ...std, rooms: [] })).toBe("");
+    expect(roomNextTexts(std, day)).toEqual([]);
+  });
+  it("RN-02 会議室の名前をカンマで並べる", () => {
+    expect(roomNames(withNext)).toBe("会議室A, 会議室B");
+  });
+  it("RN-03 次の予約がある会議室だけ文言にする", () => {
+    expect(roomNextTexts(withNext, day)).toEqual(["会議室A 15:00〜 他部署MTG"]);
+  });
+  it("RN-04 予約の開始が表示している日でなければ日付を付ける", () => {
+    const i = item("1", "2026-10-27 23:00", "2026-10-28 00:30", {
+      rooms: [{ name: "会議室A", next: { subject: "朝会", start: "2026-10-28T00:30", end: "2026-10-28T01:00" } }],
+    });
+    expect(roomNextTexts(i, day)).toEqual(["会議室A 10/28 00:30〜 朝会"]);
+  });
+  it("RN-05 予約の件名が空なら（件名なし）", () => {
+    const i = { ...std, rooms: [{ name: "会議室A", next: { ...next, subject: "" } }] };
+    expect(roomNextTexts(i, day)).toEqual(["会議室A 15:00〜 （件名なし）"]);
+  });
+
+  it.each([
+    ["RW-01", "2026-10-27 14:54", false, "終了の6分前はまだ"],
+    ["RW-02", "2026-10-27 14:55", true, "終了のちょうど5分前から"],
+    ["RW-03", "2026-10-27 14:59", true, "終了の1分前"],
+    ["RW-04", "2026-10-27 15:00", false, "終了ちょうどで終わり"],
+    ["RW-05", "2026-10-27 15:30", false, "終了後"],
+  ])("%s %s → %s（%s）", (_id, now, expected) => {
+    expect(roomAlertActive(withNext, at(now))).toBe(expected);
+  });
+  it("RW-06 次の予約がない・会議室がないなら出さない", () => {
+    expect(roomAlertActive({ ...withNext, rooms: [{ name: "会議室B" }] }, at("2026-10-27 14:58"))).toBe(false);
+    expect(roomAlertActive(std, at("2026-10-27 14:58"))).toBe(false);
+  });
+  it("RW-07 終日・完了・中止は出さない", () => {
+    expect(roomAlertActive({ ...withNext, allDay: true }, at("2026-10-27 14:58"))).toBe(false);
+    expect(roomAlertActive({ ...withNext, status: "Held" }, at("2026-10-27 14:58"))).toBe(false);
+    expect(roomAlertActive({ ...withNext, status: "Not Held" }, at("2026-10-27 14:58"))).toBe(false);
   });
 });

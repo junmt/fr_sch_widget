@@ -55,13 +55,23 @@ pub fn notice_text(notice: &Notice, today: NaiveDate) -> (String, String) {
             }
             (format!("まもなく開始（あと{}）", fmt_remaining(*minutes)), body)
         }
+        Notice::RoomNext(i, minutes) => {
+            let mut body = format!("{}-{} {}", fmt_time(i.start, today), fmt_time(i.end, today), subject(i));
+            for r in &i.rooms {
+                if let Some(n) = &r.next {
+                    let next_subject = if n.subject.is_empty() { "（件名なし）" } else { &n.subject };
+                    body.push_str(&format!("\n{}: {}〜 {}", r.name, fmt_time(n.start, today), next_subject));
+                }
+            }
+            (format!("会議室の次の予約があります（終了まであと{}）", fmt_remaining(*minutes)), body)
+        }
     }
 }
 
 /// 通知をクリックしたときに強調する予定
 pub fn notice_item_id(notice: &Notice) -> Option<&str> {
     match notice {
-        Notice::Added(i) | Notice::Changed(_, i) | Notice::Reminder(i, _) => Some(&i.id),
+        Notice::Added(i) | Notice::Changed(_, i) | Notice::Reminder(i, _) | Notice::RoomNext(i, _) => Some(&i.id),
         Notice::Removed(_) => None,
     }
 }

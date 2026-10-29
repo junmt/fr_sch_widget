@@ -325,6 +325,16 @@ body {
   text-overflow: ellipsis;
 }
 
+.item .room-next {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--warn);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .tag {
   flex: none;
   font-size: 10px;
@@ -526,4 +536,16 @@ body {
 
 .widget.compact .next-time {
   font-size: 18px;
+}
+
+/* 終了の5分前から：終了直後に会議室の次の予約がある（進行中の見た目より優先する） */
+.item.room-alert {
+  background: var(--warn-bg);
+  border-left-color: var(--warn);
+  outline: 1px solid var(--warn);
+  outline-offset: -1px;
+}
+
+.item.room-alert .room-next {
+  font-weight: 700;
 }

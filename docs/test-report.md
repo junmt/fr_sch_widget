@@ -1,19 +1,19 @@
 # F-RevoCRM Schedule Widget テスト結果報告書
 
-- 実施日: 2026-10-27
-- 対象: テスト仕様書 `docs/test-specification.md` v1.6
+- 実施日: 2026-10-27（会議室 F-14 の分は 2026-10-29）
+- 対象: テスト仕様書 `docs/test-specification.md` v1.7
 
 ## 1. 結果の概要
 
 | 種類 | 件数 | 成功 | 失敗 | 実行方法 |
 |---|---|---|---|---|
-| ユニットテスト（Rust） | 281 | 281 | 0 | Windows 上で `cargo test --lib` |
-| ユニットテスト（TypeScript） | 80 | 80 | 0 | `npm test`（vitest） |
-| ミューテーション（Rust） | 39 | 39 検出 | 0 見逃し | 3章 |
-| ミューテーション（TypeScript） | 10 | 10 検出 | 0 見逃し | 3章 |
-| 結合テスト（手動） | 39 | - | - | **未実施**（4章） |
+| ユニットテスト（Rust） | 354 | 354 | 0 | Windows 上で `cargo test --lib` |
+| ユニットテスト（TypeScript） | 92 | 92 | 0 | `npm test`（vitest） |
+| ミューテーション（Rust） | 65 | 65 検出 | 0 見逃し | 3章 |
+| ミューテーション（TypeScript） | 18 | 18 検出 | 0 見逃し | 3章 |
+| 結合テスト（手動） | 44 | - | - | **未実施**（4章） |
 
-- テスト仕様書の2〜7章のテストID（334件）は、すべてテストコードの関数名またはテスト名に含まれていることを、スクリプトで確認した。
+- テスト仕様書の2〜7章のテストID（454件）は、すべてテストコードの関数名またはテスト名に含まれていることを、スクリプトで確認した。
 - リリースビルド（`npm run tauri build`）が通り、インストーラー（NSIS、約1.7MB）ができることを確認した（自動アップデートの署名なし。署名付きのビルドは GitHub Actions のリリースで行う）。ビルド時の警告は0件。
 
 ## 2. 実行環境
@@ -31,10 +31,11 @@
 | モジュール | テスト仕様書 | 件数 |
 |---|---|---|
 | schedule.rs | 2章 | 99 |
-| crm.rs | 3章 | 68 |
-| config.rs | 4章 | 34 |
-| engine.rs | 5章 | 41 |
-| text.rs | 6.1〜6.3 | 19 |
+| rooms.rs | 2.12〜2.18 | 63 |
+| crm.rs | 3章 | 71 |
+| config.rs | 4章 | 35 |
+| engine.rs | 5章 | 43 |
+| text.rs | 6.1〜6.3 | 22 |
 | window_pos.rs | 6.4 | 10 |
 | notify.rs | 6.5 | 5 |
 | updater.rs | 6.6 | 6 |
@@ -94,16 +95,50 @@
 | T08 | settings-logic.ts | `if (t && !result.includes(t)) result.push(t);` → `if (t) result.push(t);` | PT-01 | 1 | 検出 |
 | T09 | logic.ts | `timeLabel` の開始日の判定を外す（常に日付なし） | TL-02 | 1 | 検出 |
 | T10 | logic.ts | 長さ0の予定でも終了時刻を出す | TL-04 | 1 | 検出 |
+| M40 | rooms.rs | `b.start > item.start && b.start <= item.end` → `b.start > item.start && b.start < item.end` | AR-07 | 1以上 | 検出 |
+| M41 | rooms.rs | 次の予約の条件から `!is_own(b)` を外す | AR-11 | 1以上 | 検出 |
+| M42 | rooms.rs | 次の予約の条件から `!b.all_day` を外す | AR-13 | 1以上 | 検出 |
+| M43 | rooms.rs | 次の予約の条件から `!is_not_held(b)` を外す | AR-12 | 1以上 | 検出 |
+| M44 | rooms.rs | `b.start > item.start` → `b.start >= item.start` | AR-10 | 1以上 | 検出 |
+| M45 | rooms.rs | 会議室の判定の `!b.all_day && same_event(item, b)` → `same_event(item, b)` | AR-01 | 1以上 | 検出 |
+| M46 | rooms.rs | `same_event` から件名の比較を外す | AR-03 | 1以上 | 検出 |
+| M47 | rooms.rs | `.min_by_key(\|b\| b.start)` → `.max_by_key(\|b\| b.start)` | AR-15 | 1以上 | 検出 |
+| M48 | rooms.rs | `item.rooms.clear();` → （削除） | AR-17 | 1以上 | 検出 |
+| M49 | rooms.rs | `now < i.end` → `now <= i.end` | RA-04 | 1以上 | 検出 |
+| M50 | rooms.rs | `Duration::minutes(ROOM_ALERT_MINUTES)` → `Duration::minutes(ROOM_ALERT_MINUTES + 1)` | RA-02 | 1以上 | 検出 |
+| M51 | rooms.rs | 知らせ済みの記録から終了時刻を外す（`room\|{id}`） | RA-11 | 1以上 | 検出 |
+| M52 | rooms.rs | `remindable(i) &&` を外す | RA-09 | 1以上 | 検出 |
+| M53 | rooms.rs | `r.next.is_some()` → `!r.name.is_empty()` | RA-06 | 1以上 | 検出 |
+| M54 | rooms.rs | 名前の候補から名姓（`{first}{last}`）を外す | RR-04 | 1以上 | 検出 |
+| M55 | rooms.rs | `name_key` の `.to_lowercase()` を外す | NK-02 | 1以上 | 検出 |
+| M56 | rooms.rs | `spec.id.clone().or_else(` → `None.or_else(` | RR-01 | 1以上 | 検出 |
+| M57 | rooms.rs | `!name.is_empty() && is_ws_id(id)` → `is_ws_id(id)` | RS-04 | 1以上 | 検出 |
+| M58 | rooms.rs | `rsplit_once('=')` → `split_once('=')` | RS-06 | 1以上 | 検出 |
+| M59 | rooms.rs | `build_day` で会議室の情報を付けない | BD-02 | 1以上 | 検出 |
+| M60 | rooms.rs | `build_day` の自分の予定を、絞り込んだ一覧にする | BD-03 | 1以上 | 検出 |
+| M61 | config.rs | 会議室の重複を `name_key` ではなく文字列そのもので判定する | NS-11 | 1以上 | 検出 |
+| M62 | engine.rs | `tick` で会議室の知らせを通知に加えない | TK-04 | 1以上 | 検出 |
+| M63 | text.rs | 会議室の通知の予約の時刻を、日付なしの `%H:%M` にする | NT-10 | 1以上 | 検出 |
+| M64 | crm.rs | `build_query(owner_id, …)` → `build_query(&session.user_id, …)` | FO-01 | 1以上 | 検出 |
+| T11 | logic.ts | `return left > 0 &&` → `return left >= 0 &&` | RW-04 | 1以上 | 検出 |
+| T12 | logic.ts | `left <= ROOM_ALERT_MINUTES` → `left < ROOM_ALERT_MINUTES` | RW-02 | 1以上 | 検出 |
+| T13 | logic.ts | `roomAlertActive` の完了・中止の判定を外す | RW-07 | 1以上 | 検出 |
+| T14 | logic.ts | `if (!r.next) continue;` → （削除） | RN-03 | 1以上 | 検出 |
+| T15 | logic.ts | `roomNextTexts` で常に日付を付けない | RN-04 | 1以上 | 検出 |
+| T16 | logic.ts | `r.next.subject \|\| "（件名なし）"` → `r.next.subject` | RN-05 | 1以上 | 検出 |
+| T17 | logic.ts | `roomNames` の区切りを `", "` → `","` | RN-02 | 1以上 | 検出 |
+| T18 | logic.ts | `.some((r) => r.next)` → `.some((r) => r.name)` | RW-06 | 1以上 | 検出 |
 
 ## 4. 結合テスト（手動）
 
-テスト仕様書 8章の IT-01〜IT-30 は、実際の F-RevoCRM・デスクトップ・通知を使って確認する必要があるため、**まだ実施していない**。特に次の点は、ユニットテストでは確認できないので、最初に確認することを勧める。
+テスト仕様書 8章の IT-01〜IT-44 は、実際の F-RevoCRM・デスクトップ・通知を使って確認する必要があるため、**まだ実施していない**。特に次の点は、ユニットテストでは確認できないので、最初に確認することを勧める。
 
 1. IT-04：実際の CRM で、時刻が CRM のカレンダー画面と同じになること
 2. IT-14：終日予定が「開始・終了とも 00:00」で保存されているか（仕様書 9章 未決事項 No.2）
 3. IT-25：対象にする一番古いバージョンの F-RevoCRM で、フィールドを指定した `query` が使えるか
 4. IT-26〜27：自動アップデート（v0.1.0 を入れた状態で v0.1.1 をリリースして確認する）
-5. IT-07：通知をクリックしたときの動作（インストールしたアプリで確認する。開発中の実行ファイルでは、PowerShell の通知として表示される）
+5. IT-40〜44：会議室。特に、CRM の共有設定で会議室ユーザーの予定が見えるか、Users を一般ユーザーで読めるか（読めなければ `会議室B=19x12` の形で設定する）
+6. IT-07：通知をクリックしたときの動作（インストールしたアプリで確認する。開発中の実行ファイルでは、PowerShell の通知として表示される）
 
 ## 5. テストの過程で見つけて直したこと
 
@@ -117,3 +152,5 @@
 | 6 | 実際の F-RevoCRM（社内）で、予定の時刻が9時間ずれた。`query` は UTC で返すと考えていたが、実際は CRM サーバーのタイムゾーン（F-RevoCRM の既定は Asia/Tokyo）で返していた。ユニットテストは「UTC で返す」という誤った前提をそのまま検証していたため、見つけられなかった | 設定に「CRM サーバーのタイムゾーン」を追加し、既定を「PC と同じ」にした（v0.1.3）。不具合の再現テスト BT-05 と、PR-18・PR-19・LS-07 を追加した |
 | 7 | 実際の F-RevoCRM（社内）で「ログインできません」になった。F-RevoCRM の不具合で、前の認証から5分以内の認証は必ず失敗するため（接続テストの直後の取得、再起動など） | ログインに成功したトークンを覚えて使い回し、新しいトークンでの1回目の失敗は5分待って再試行するようにした（v0.1.4、仕様書 5.2）。テスト CU・AU・LB・NF を追加した |
 | 8 | v0.1.4 に更新した直後、9時間ずれた予定が表示された。更新前の版が保存したキャッシュ（ずれた時刻）を、認証の制限で待っている間そのまま表示していた | キャッシュに作った条件を保存し、条件が違うものは使わないようにした（v0.1.5）。CA-05・CA-06・CS-01 を追加した |
+| 9 | 会議室の判定 `annotate_rooms` に「予定が終日なら会議室を付けない」という条件があったが、ミューテーション（AR-01）で見逃しになった。終日かどうかは時刻で決まるため、終日の予定と同じ開始・終了になるのは終日の予約だけで、その予約は内側の条件で除いているので、意味のない条件だった | 条件を削除し、内側の条件（終日の予約を除く）を外すミューテーションで AR-01 が失敗することを確認した |
+| 10 | ミューテーション NS-11 が、最初はコンパイルエラーになっていて確認になっていなかった | 重複の判定を文字列そのものにする形に直して再実行し、NS-11 が失敗することを確認した |

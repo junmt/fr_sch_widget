@@ -3,6 +3,7 @@ mod context_menu;
 mod crm;
 mod engine;
 mod notify;
+mod rooms;
 mod runtime;
 mod schedule;
 mod text;

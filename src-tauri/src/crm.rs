@@ -1,5 +1,6 @@
 //! F-RevoCRM 標準 Webservice API（webservice.php）のクライアント
 
+use crate::rooms::build_users_query;
 use crate::schedule::{build_query, QUERY_PAGE_SIZE};
 use chrono::{DateTime, Local, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
@@ -310,10 +311,15 @@ impl CrmClient {
 
     /// 期間にかかる自分の予定をすべて取得する（100件ずつページング）
     pub async fn fetch_events(&self, session: &Session, from: NaiveDate, to: NaiveDate) -> Result<Vec<Value>, CrmError> {
+        self.fetch_events_of(session, &session.user_id, from, to).await
+    }
+
+    /// 期間にかかる、`owner_id` のユーザーが担当の予定をすべて取得する（会議室の予約を見るのにも使う）
+    pub async fn fetch_events_of(&self, session: &Session, owner_id: &str, from: NaiveDate, to: NaiveDate) -> Result<Vec<Value>, CrmError> {
         let mut all = Vec::new();
         let mut offset = 0;
         loop {
-            let page = self.query_page(session, from, to, offset).await?;
+            let page = self.query_page(session, owner_id, from, to, offset).await?;
             let n = page.len();
             all.extend(page);
             if n < QUERY_PAGE_SIZE {
@@ -363,14 +369,29 @@ impl CrmClient {
         }
     }
 
-    async fn query_page(&self, session: &Session, from: NaiveDate, to: NaiveDate, offset: usize) -> Result<Vec<Value>, CrmError> {
+    /// ユーザーの一覧をすべて取得する（会議室のユーザーを探すのに使う）
+    pub async fn fetch_users(&self, session: &Session) -> Result<Vec<Value>, CrmError> {
+        let mut all = Vec::new();
+        let mut offset = 0;
+        loop {
+            let page = self.query(session, &build_users_query(offset)).await?;
+            let n = page.len();
+            all.extend(page);
+            if n < QUERY_PAGE_SIZE {
+                return Ok(all);
+            }
+            offset += QUERY_PAGE_SIZE;
+        }
+    }
+
+    async fn query_page(&self, session: &Session, owner_id: &str, from: NaiveDate, to: NaiveDate, offset: usize) -> Result<Vec<Value>, CrmError> {
         let select_all = self.select_all.load(Ordering::Relaxed);
-        let vtql = build_query(&session.user_id, from, to, offset, select_all);
+        let vtql = build_query(owner_id, from, to, offset, select_all);
         match self.query(session, &vtql).await {
             Err(CrmError::Api { code, message }) if !select_all => {
                 log::warn!("フィールドを指定した query が失敗したため SELECT * で取り直します: {code} {message}");
                 self.select_all.store(true, Ordering::Relaxed);
-                self.query(session, &build_query(&session.user_id, from, to, offset, true)).await
+                self.query(session, &build_query(owner_id, from, to, offset, true)).await
             }
             other => other,
         }

@@ -28,6 +28,7 @@ fn item(id: &str, start: &str, end: &str) -> ScheduleItem {
         location: None,
         modified_time: String::new(),
         badge: None,
+        rooms: Vec::new(),
     }
 }
 
@@ -55,6 +56,7 @@ fn kinds(n: &[Notice]) -> Vec<&'static str> {
             Notice::Changed(..) => "changed",
             Notice::Removed(_) => "removed",
             Notice::Reminder(..) => "reminder",
+            Notice::RoomNext(..) => "room_next",
         })
         .collect()
 }
@@ -415,6 +417,41 @@ fn tk02_badge_expiry() {
     assert!(!e.tick(ndt("2026-10-27 09:32"), &Settings::default()).1);
     assert!(e.tick(ndt("2026-10-27 09:33"), &Settings::default()).1);
     assert_eq!(badges(&e), vec![("18x1", None), ("18x3", None)]);
+}
+#[test]
+fn tk04_room_next_alert_once() {
+    use crate::rooms::{RoomNext, RoomUse};
+    let mut with_room = b();
+    with_room.rooms = vec![RoomUse {
+        name: "会議室A".into(),
+        next: Some(RoomNext { subject: "次".into(), start: ndt("2026-10-27 16:00"), end: ndt("2026-10-27 17:00") }),
+    }];
+    let mut e = Engine::new(day("2026-10-27"), None);
+    e.on_success(vec![with_room.clone()], local("2026-10-27 09:00"), &Settings::default());
+    // リマインドなしの設定でも、会議室の知らせは終了5分前に出る
+    let s = Settings { reminder_minutes: vec![], ..Default::default() };
+    assert!(e.tick(ndt("2026-10-27 15:54"), &s).0.is_empty());
+    let (n, changed) = e.tick(ndt("2026-10-27 15:55"), &s);
+    assert_eq!(n, vec![Notice::RoomNext(with_room, 5)]);
+    assert!(!changed);
+    assert!(e.tick(ndt("2026-10-27 15:56"), &s).0.is_empty());
+}
+#[test]
+fn tk05_room_alert_record_cleared_on_new_day() {
+    use crate::rooms::{RoomNext, RoomUse};
+    let mut with_room = b();
+    with_room.rooms = vec![RoomUse {
+        name: "会議室A".into(),
+        next: Some(RoomNext { subject: "次".into(), start: ndt("2026-10-27 16:00"), end: ndt("2026-10-27 17:00") }),
+    }];
+    let s = Settings { reminder_minutes: vec![], ..Default::default() };
+    let mut e = Engine::new(day("2026-10-27"), None);
+    e.on_success(vec![with_room.clone()], local("2026-10-27 09:00"), &s);
+    assert_eq!(kinds(&e.tick(ndt("2026-10-27 15:55"), &s).0), vec!["room_next"]);
+    // 日付が変わったら記録を消す（同じ id・同じ終了時刻でも、翌日の分として扱う）
+    assert!(e.roll_day(day("2026-10-28")));
+    e.on_success(vec![with_room], local("2026-10-28 09:00"), &s);
+    assert_eq!(kinds(&e.tick(ndt("2026-10-27 15:56"), &s).0), vec!["room_next"]);
 }
 #[test]
 fn tk03_nothing_happens() {

@@ -18,6 +18,7 @@ fn item(id: &str, start: &str, end: &str, subject: &str) -> ScheduleItem {
         location: None,
         modified_time: String::new(),
         badge: None,
+        rooms: Vec::new(),
     }
 }
 
@@ -103,6 +104,44 @@ fn ni01_focus_id() {
     let new = item("18x9", "2026-10-27 15:00", "2026-10-27 16:00", "件名");
     assert_eq!(notice_item_id(&Notice::Changed(std_item(), new)), Some("18x9"));
     assert_eq!(notice_item_id(&Notice::Reminder(std_item(), 1)), Some("18x1"));
+}
+#[test]
+fn nt09_room_next() {
+    use crate::rooms::{RoomNext, RoomUse};
+    let mut i = std_item();
+    i.rooms = vec![
+        RoomUse {
+            name: "会議室A".into(),
+            next: Some(RoomNext { subject: "他部署MTG".into(), start: ndt("2026-10-27 15:00"), end: ndt("2026-10-27 16:00") }),
+        },
+        RoomUse { name: "会議室B".into(), next: None },
+        RoomUse {
+            name: "会議室C".into(),
+            next: Some(RoomNext { subject: String::new(), start: ndt("2026-10-27 14:50"), end: ndt("2026-10-27 16:00") }),
+        },
+    ];
+    assert_eq!(
+        text(Notice::RoomNext(i, 5)),
+        (
+            "会議室の次の予約があります（終了まであと5分）".into(),
+            "14:00-15:00 件名\n会議室A: 15:00〜 他部署MTG\n会議室C: 14:50〜 （件名なし）".into()
+        )
+    );
+}
+#[test]
+fn nt10_room_next_on_other_day() {
+    use crate::rooms::{RoomNext, RoomUse};
+    // 日をまたぐ予定の終了直後の予約は日付を付ける
+    let mut i = item("18x1", "2026-10-27 23:00", "2026-10-28 00:30", "夜間作業");
+    i.rooms = vec![RoomUse {
+        name: "会議室A".into(),
+        next: Some(RoomNext { subject: "朝会".into(), start: ndt("2026-10-28 00:30"), end: ndt("2026-10-28 01:00") }),
+    }];
+    assert_eq!(text(Notice::RoomNext(i, 1)).1, "23:00-10/28 00:30 夜間作業\n会議室A: 10/28 00:30〜 朝会");
+}
+#[test]
+fn ni03_room_next_focus_id() {
+    assert_eq!(notice_item_id(&Notice::RoomNext(std_item(), 5)), Some("18x1"));
 }
 #[test]
 fn ni02_removed_has_no_focus() {

@@ -53,6 +53,18 @@
       </section>
 
       <section>
+        <h2>会議室</h2>
+        <label>会議室（CRM のユーザー）
+          <input id="meetingRooms" type="text" placeholder="例: 会議室A, 会議室B" />
+        </label>
+        <p class="help">
+          会議室ごとに作った CRM のユーザーを、ユーザー名か氏名でカンマ区切りで入力します。予定にそのユーザーを招待していると、一覧に会議室を表示します。
+          終了直後に同じ会議室の別の予約があるときは、その旨を表示し、終了の5分前に通知します。
+          ユーザーを見つけられないときは「会議室B=19x12」のように ID も書けます。
+        </p>
+      </section>
+
+      <section>
         <h2>表示</h2>
         <label>表示する活動種別
           <input id="activityTypes" type="text" placeholder="例: Call, Meeting（空ならすべて）" />
